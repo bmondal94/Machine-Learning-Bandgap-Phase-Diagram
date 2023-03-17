@@ -12,6 +12,7 @@ import sqlite3 as sq
 import pickle
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FormatStrFormatter, MultipleLocator
 import glob, sys, os, shutil
 from datetime import datetime
 
@@ -24,312 +25,281 @@ import MLmodelSVMFunctions as mlmf
 np.set_printoptions(precision=3, suppress=True)
 from sklearn.metrics import classification_report, accuracy_score, confusion_matrix, ConfusionMatrixDisplay
 oldstd = sys.stdout
+plt.rc('font', size=24)  
 
-#pd.set_option('display.max_columns', 16)
+#pd.set_option('display.max_columns', None)
+#pd.set_option('display.max_rows', None)
+#pd.reset_option('display.max_columns')
+#pd.reset_option('display.max_rows')
+pd.set_option('display.expand_frame_repr', True)
+#pd.convert_dtypes()
+
+eps = (0.0001,)
 #%% ------------------------- Load database -----------------------------------
-#https://www.tensorflow.org/tutorials/keras/regression
-# load dataset
-dirpath = '/home/bmondal/MachineLerning/BandGapML/'
-BinaryTrainedModels = 0
-OnlyGoodData = 1
-if BinaryTrainedModels:
-    dbname = dirpath+'/DATAbase/Binary_BPD_MLDataBase_GaPAsSb.db'
-else:
-    if OnlyGoodData:
-        dbname = dirpath+'/DATAbase/BPD_ML_Total_DataBase_GaPAsSb_GoodData.db'
-    else:
-        dbname = dirpath+'/DATAbase/BPD_ML_Total_DataBase_GaPAsSb.db'
-    
-    
+#UseVegardsLaw has higher priority during plotting over UseLatticeParamterModel
+#If UseLatticeParamterModel is true then it also compares the predicted lattice parameters from vegards law.
+
+dirpath = '/home/bmondal/MachineLerning/BandGapML_project/'
 BinaryConversion=True # 1: Direct, 0: Indirect
+OnlyGoodData = 0
+UseLatticeParamterModel = True # <-- Training is based on LATTICEPARAMETER1: Check mlmf.SVMModelTrainingFunctions(). Model learns & predicts in-plane lattice parameter only.
+Disable3dFigsGrawing = True
+UseVegardsLaw = True # <== Use vegards law for equilibrium lattice parameter calculations
+createmovie = False # <== Draw movie of bandgap phase diagram from snapshots
+DrawHtmls = True # <== Create htmls
+DataCuration = False # <== Create good data
+
+if OnlyGoodData:
+    dbname = dirpath+'/DATAbase/Total_BPD_MLDataBase_GaPAsSb_GoodData.db'
+else:
+    dbname = dirpath+'/DATAbase/Total_BPD_MLDataBase_GaPAsSb.db'
 
 df, points = mlgf.CreateDataForModel(dbname, ReturnPredictPoints=False,BinaryConversion=BinaryConversion)
-# df = df.iloc[:-2]
+# df.drop(index=df.index[df['STRAIN'].abs()>5.0001], inplace=True)
+df = df.sample(frac=1).reset_index(drop=True)
+# df = df.iloc[:1000]
+
+df_qua_id = df.index[(df['PHOSPHORUS']>eps[0]) & (df['ANTIMONY']>eps[0]) & (df['ARSENIC']>eps[0])]
+df_qua = df.loc[df_qua_id].reset_index(drop=True)  ## Quaternary data
+df_bintern = df.drop(index=df_qua_id, inplace=False).reset_index(drop=True) ## Binary + Ternary data
 
 xfeatures = ['PHOSPHORUS', 'ANTIMONY', 'ARSENIC',  'STRAIN']
 yfeatures = [s for s in list(df.columns) if s.startswith('BW')]
 
 if points is not None: predict_points = pd.DataFrame(points, columns=xfeatures)
-#%%----------------- BWs-Eg nature conversion ---------------------------------
-df = mlgf.ConvertBWs2BandgapNature(df, BinaryConversion,colname='nature')
 
-assert df['NATURE'].equals(df['nature']), 'The bandgap nature from BWs conversion doesnot match with actual.'
-
-#%% ++++++++++++++++++++ Substrate part +++++++++++++++++++++++++++++++++++++++
-EqulibriumData = df[df['STRAIN']==-4.5]
-subname = ['GaAs','GaP','Si','Test']
-sublattice = np.array([[5.689],[5.475],[5.43],[5.612]]) # Substrate lattice parameters
-
+assert len(df[(df["LATTICEPARAMETER1"] == df["LATTICEPARAMETER2"]) & (df["LATTICEPARAMETER2"] == df["LATTICEPARAMETER3"]) \
+    & (df["STRAIN"] != 0.0)]) == 0,'The data base include non-biaxial strain data'
+    
+# Unstrained structures
+subname = {'GaAs':(5.689,1.4662),'GaP':(5.475,2.3645),\
+           'Si':(5.42103,1.1915),'GaSb':(6.13383,0.641),\
+               'InP':(5.93926,1.4341)} # lattice parameter, bandgap
+EqulibriumData = df[df['STRAIN'].abs() < eps[0]]
+EqulibriumData = EqulibriumData.join(mlgf.CreateSubstrateStrainData(subname,EqulibriumData['LATTICEPARAMETER1'])) # Calculate the Strain data
 EqmDf = mlpf.generate_scatter_data(EqulibriumData[['PHOSPHORUS', 'ANTIMONY', 'ARSENIC']]) 
-_ = mlpf.DrawRandomConfigurationPoints(EqmDf, fname=None, titletext=None, 
-                                       savefig=False, scale=100,
-                                       axislabels = ["GaSb", "GaAs", "GaP"],axiscolors=None,
-                                       axislabelcolors=None, colorbar=False,
-                                       fontsize = 20,colors=EqulibriumData['NATURE'])
-#%%% *********************** Calculate the Strain data ************************
-substraindict = {}
-for I in range(len(subname)):
-        substraindict[subname[I]]=(sublattice[I] - EqulibriumData['LATTICEPARAMETER1']) \
-        /EqulibriumData['LATTICEPARAMETER1'] * 100
-EqulibriumData = EqulibriumData.join(pd.DataFrame(substraindict))
 
-#%%%************************** Plotting substate strains only *****************
-#%%%%............... Plot 2d ternary data .....................................
-WhichSubstrate = EqulibriumData[subname[0]]   
-vmin = WhichSubstrate.min()
-vmax = WhichSubstrate.max()
-_ = mlpf.DrawRandomConfigurationPoints(EqmDf, fname=None, titletext=None, 
-                                       savefig=False, scale=100,
-                                       axislabels = ["GaSb", "GaAs", "GaP"],axiscolors=None,
-                                       axislabelcolors=None, colorbar=True,
-                                       fontsize = 20, colors=WhichSubstrate,vmin=vmin, vmax=vmax)                                    
-#%%%%................ Plot 3d ternary data ....................................
-_ = mlpf.Plot3DBandgapTernary(EqulibriumData['ARSENIC'], EqulibriumData['ANTIMONY'], 
-                              WhichSubstrate,WhichSubstrate,
-                              textt=['GaP','GaAs','GaSb'], scale=100) 
+#%%----------------- BWs-Eg nature conversion ---------------------------------
+# df = mlgf.ConvertBWs2BandgapNature(df, BinaryConversion,colname='CONVERTED_NATURE')
+# assert df['NATURE'].equals(df['nature']), 'The bandgap nature from BWs conversion doesnot match with actual.'
 
-#%%++++++++++++++++++++++++ SVR model +++++++++++++++++++++++++++++++++++++++++
+#%%++++++++++++++++++++++++ SVM model +++++++++++++++++++++++++++++++++++++++++
+#%%% prority: PerformAll>TESTi
+### BT == train binary-ternary, test quaternary
+### Q == train quaternary, test binary-ternary 
+### BTq == train binary-ternary + quaternary fraction, test test-set + quaternary rest frac <== Leraning curveT3
+### Qbt == train quaternary + binary-ternary fraction, test test-set + binary-ternary rest frac <== Leraning curveT3
+### BTQ == train binary-ternary-quaternary, test test-set <== Learning curve
+### BPD == Final training with binary-ternary-quaternary, test test-set
+### BPD_lp == Train lattice parameter model with binary-ternary-quaternary, test test-set
 
-#%%%-------------- Model paths for Binary trained models ----------------------
-dirpathSystem = dirpath+'/'+'GaPAsSb/RESULTS/GOODdataSET'
-SaveFigPath = dirpathSystem + '/' +'Figs'
-SaveMoviePath = dirpathSystem + '/' +'MOVIE'
-SaveHTMLPath = dirpathSystem + '/' +'HTML'
-modelPATHS = dirpathSystem+'/'+'MODELS'+'/'
-OutPutTxtFile = modelPATHS + 'output.txt'  
-svr_bandgap = modelPATHS + 'svrmodel_bandgap'
-svc_EgNature = modelPATHS + 'svrmodel_EgNature'
-if BinaryConversion:
-    svc_EgNature += '_binary'
-svr_bw = modelPATHS + 'svrmodel_bw'
-svr_bw_dm = modelPATHS + 'DirectMultioutput/'
-# os.makedirs(svr_bw_dm,exist_ok=True)
-svr_lp = modelPATHS + 'svrmodel_lp'
+TESTS = {'BT':False, 'BTq':False, 'Q':False, 'Qbt':False, 'BTQ':False, 'BPD':True, 'BPD_lp':False}
+PerformAll = True
+if PerformAll: 
+    TESTS = {key:True for key in TESTS.keys()}
+
+#%%%----------------------- Model paths ---------------------------------------
+dirpathSystem = dirpath+'/GaPAsSb/RESULTS/'
+dirpathSystem += '/GOODdataSET/' if OnlyGoodData else '/ORIGINALdataSET/' 
 
 #%%%***************** Training model type parameters***************************
-retrain_models = 0
+retrain_models = 1
 multiregression = False
 regressorchain = False
 retrainbw = False
-retraineg = 1
-MultipleScoringfn=True
-retrainnature = 1
-retrainlp = 0
-if retrain_models:
-    if os.path.exists(dirpathSystem):
-        shutil.rmtree(dirpathSystem)  
+StartFromScratch = True # <== This will delete the whole folder and start from scratch
+TOTALTRAINING = {'retraineg':True,
+                 'retrainnature':True}
 
-    os.makedirs(dirpathSystem,exist_ok=True)
-    os.makedirs(SaveFigPath,exist_ok=True) 
-    os.makedirs(SaveMoviePath,exist_ok=True)
-    os.makedirs(modelPATHS,exist_ok=True)
+#For compatibility
+SaveFigPath,svr_bandgap,svc_EgNature,svr_bw,svr_bw_dm,svr_lp  = 'TEST', 'TEST', 'TEST', 'TEST', 'TEST', 'TEST'
 
-    if retrainlp: yfeatures='LATTICEPARAMETER1'
-    
+if retrain_models: 
     if regressorchain: multiregression = False
-    
-    if (retrainbw or retraineg or retrainlp) and MultipleScoringfn: # This will automatically adjusted to 'accuracy' for SVC.
-        scoringfn='r2' #('r2', 'neg_mean_squared_error')
-        refit = True # 'r2'
-    else:
-        scoringfn = None; refit = True
-        
-    
-    sys.stdout = open(OutPutTxtFile, "w")
-    print(f"Training date: {datetime.now()}\n")
-    _ = mlmf.SVMModelTrainingFunctions(df, xfeatures, yfeatures=yfeatures, scaley=100, 
-                                       multiregression=multiregression, regressorchain=regressorchain, 
-                                       IndependentOutput=False, retrainbw=retrainbw, retraineg=retraineg,
-                                       retrainnature=retrainnature, retrainlp=retrainlp,
-                                       svr_bw=svr_bw, svr_lp=svr_lp,svr_bandgap=svr_bandgap,
-                                       svr_bw_dm=svr_bw_dm, svc_EgNature=svc_EgNature, save_model=1,
-                                       scoringfn=scoringfn, refit=refit,
-                                       PlotResults=1,LearningCurve=0,
-                                       saveFig=True, savepath=SaveFigPath)
-    sys.stdout = oldstd
+ 
+    for IIII, IIII_val in TESTS.items():
+        if IIII_val:
+            print("+"*100)
+            print(f"Test = TEST_{IIII}")
+            dirpathSystem__ = dirpathSystem + f'TEST_{IIII}'
+            if all(TOTALTRAINING.values()) and StartFromScratch and os.path.exists(dirpathSystem__):
+                print("Deleting all files and start from scratch.")
+                shutil.rmtree(dirpathSystem__)  
+                os.makedirs(dirpathSystem__,exist_ok=True)
+
+            df_train, df_test, SplitInputData, LearningCurve, LearningCurveT3,SVRdependentSVC,train_lp = \
+                mlgf.SetSplitLearningParams(IIII, df, df_bintern, df_qua,trainlp=UseLatticeParamterModel)  
+ 
+            if train_lp: 
+                TOTALTRAINING_backup = TOTALTRAINING.copy()
+                TOTALTRAINING = {x_tmp:False for x_tmp in TOTALTRAINING}
+                TOTALTRAINING['retrainlp']=True  
+            else:
+                TOTALTRAINING['retrainlp']=False
+                
+            for KEYYY,VALLL in TOTALTRAINING.items():
+                TMPUPDATE = {x_tmp:False for x_tmp in TOTALTRAINING}
+                if VALLL:
+                    TMPUPDATE[KEYYY] = VALLL 
+                    if (retrainbw or TMPUPDATE['retraineg']): 
+                        scoringfn=('r2', 'neg_root_mean_squared_error','my_rmse_abs','my_rmse_fix')
+                        refit = ('r2', 'neg_root_mean_squared_error','my_rmse_abs','my_rmse_fix')
+                    elif TMPUPDATE['retrainlp']:
+                        scoringfn = 'neg_root_mean_squared_error'
+                        refit = True
+                    else:
+                        scoringfn = ('accuracy','balanced_accuracy')
+                        refit = ('accuracy','balanced_accuracy')
+                    if isinstance(refit, str) or isinstance(refit, bool): 
+                        SaveFigPath, SaveMoviePath, SaveHTMLPath, modelPATHS, OutPutTxtFile, svr_bandgap,\
+                            svc_EgNature, svr_bw, svr_bw_dm, svr_lp = mlgf.CreateResultDirectories(dirpathSystem__,BinaryConversion, refit)
+                        sys.stdout = open(OutPutTxtFile, "w")
+                        print(f"Training date: {datetime.now()}\n")
+                        print("="*100)
+                        print(f"Refit metrics: {refit}")
+                        DoNotResetFolder = None
+                    else:
+                        DoNotResetFolder = {r_metix:False for r_metix in refit}
+                          
+                    _ = mlmf.SVMModelTrainingFunctions(df_train, xfeatures, DoNotResetFolder, yfeatures=yfeatures, scaley=100, RepeatLearningCurveTimes=5,
+                                                       multiregression=multiregression, regressorchain=regressorchain, 
+                                                       IndependentOutput=False, retrainbw=retrainbw, retraineg=TMPUPDATE['retraineg'],
+                                                       retrainnature=TMPUPDATE['retrainnature'], retrainlp=TMPUPDATE['retrainlp'],LearningCurveT3=LearningCurveT3,
+                                                       svr_bw=svr_bw, svr_lp=svr_lp,svr_bandgap=svr_bandgap,SaveResults=True,
+                                                       svr_bw_dm=svr_bw_dm, svc_EgNature=svc_EgNature, save_model=1,
+                                                       scoringfn=scoringfn, refit=refit,SplitInputData=SplitInputData,
+                                                       PlotResults=1,LearningCurve=LearningCurve,test_set=df_test,
+                                                       saveFig=True, savepath=SaveFigPath,SVRdependentSVC=SVRdependentSVC,
+                                                       dirpathSystem_=dirpathSystem__,BinaryConversion=BinaryConversion)
+                    
+                    if isinstance(refit, str) or isinstance(refit, bool): sys.stdout = oldstd
+                    if IIII in ['BTq','Qbt','BTQ']:
+                        for refit__ in refit:
+                            print(f"Creating figures (refit metric = {refit__})")
+                            OutPutTxtFile = dirpathSystem__+'/'+'MODELS'+'/'+ refit__ + '/output.txt'
+                            OutdataFrame = mlgf.ReadOutputTxtFile(OutPutTxtFile)
+                            mlpf.PlotPostProcessingDataSetSize(OutdataFrame,save=True,savepath=f"{dirpathSystem__}/Figs/{refit__}/")
+            if train_lp: TOTALTRAINING = TOTALTRAINING_backup.copy()
+    print('\n*All model training successful.')
+
+#%% ========== Postprocessing TEST_BTq,Qbt,BTQ ================================
+#### If retrain_models=True the plotting are automatic there. Don't need to run this block.
+filename = dirpathSystem + '/TEST_BTQ' 
+outnamelist = [name for name in os.listdir(filename+'/MODELS/')]
+
+for fname in outnamelist:
+    SaveFigPathTmp = filename+'/Figs/'+fname
+    OutdataFrame = mlgf.ReadOutputTxtFile(filename+'/MODELS/'+fname+'/output.txt')
+    # _ = mlpf.PlotPostProcessingDataSetSizeV0(OutdataFrame,save=True,savepath=SaveFigPathTmp)
+    # _ = mlpf.PlotPostProcessingDataSetSize(OutdataFrame,save=True,savepath=SaveFigPathTmp)
+    _ = mlpf.PlotPostProcessingDataSetSizeLogLog(OutdataFrame,save=True,savepath=SaveFigPathTmp)
+
 
 #%%%********** Load model and predictions *************************************
-#%%%---------- Test binary trained model on known ternary ---------------------
-tmpmodelPATHS = dirpath+'/MODELS/GaPAsSb/BinaryTrainedModels/'
-tmpsvr_bandgap = tmpmodelPATHS + 'svrmodel_bandgap'
-tmpsvc_EgNature = tmpmodelPATHS + 'svrmodel_EgNature'
-if BinaryConversion:
-    tmpsvc_EgNature += '_binary'
-
-BinaryConversion=True
-
-dbnameee = dirpath+'/DATAbase/Ternary_Random_BPD_Ga_MLDataBase.db'
-df_test, _ = mlgf.CreateDataForModel(dbnameee, ReturnPredictPoints=False,
-                                     BinaryConversion=BinaryConversion)
-dbnameeee = dirpath+'/DATAbase/Ternary_Random_BPD_Ga_MLDataBase_p2.db'
-df_test_, _ = mlgf.CreateDataForModel(dbnameeee, ReturnPredictPoints=False,
-                                     BinaryConversion=BinaryConversion)
-
-df_test =pd.concat([df_test,df_test_], ignore_index=True)
-
-TestPoints_X = df_test[xfeatures]
-
-print(f"Testing binary trained model on known ternary date: {datetime.now()}\n")
-print("* Model testing for bandgap prediction (SVR):")
-TestPoints_Y_Eg = df_test['BANDGAP']
-SVMBandgapModel = pickle.load(open(tmpsvr_bandgap+'.sav', 'rb')) # Bandgap model 
-Y_bandgap = mlmf.TestModelTernaryPoints(TestPoints_X, TestPoints_Y_Eg, SVMBandgapModel)
-mlpf.plot_true_predict_results(TestPoints_Y_Eg, Y_bandgap, text='Bandgap (eV)')
-
-print("* Model testing for bandgap nature prediction (SVC):")
-TestPoints_Y_EgNature = df_test['NATURE']
-SVCEgNatureModel = pickle.load(open(tmpsvc_EgNature+'.sav', 'rb')) 
-Y_BandgapNature = mlmf.TestModelTernaryPoints(TestPoints_X, TestPoints_Y_EgNature,
-                                                    SVCEgNatureModel, SVCclassification=True)
-mlpf.plot_true_predict_results(TestPoints_Y_EgNature, Y_BandgapNature, text='Bandgap nature')
-cm = confusion_matrix(TestPoints_Y_EgNature, Y_BandgapNature)
-disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-disp.plot()
-#%%%---------- Test ternary trained model on known ternary --------------------
-SVRdependentSVC=False
-print(f"Testing binary trained model on known ternary date: {datetime.now()}\n")
-TestPoints = df[xfeatures+['BANDGAP','NATURE']].copy()
-SVMBandgapModel = pickle.load(open(svr_bandgap+'.sav', 'rb')) # Bandgap model 
-SVCEgNatureModel = pickle.load(open(svc_EgNature+'.sav', 'rb')) # Bandgap nature model
-if SVRdependentSVC: 
-    params = SVMBandgapModel['svrm'].get_params()
-    params.pop('epsilon')
-    SVCEgNatureModel['svrm'].set_params(**params)
-    SaveFigPath += '/SVRdependentSVC/'
-    SaveMoviePath += '/SVRdependentSVC/'
-    os.mkdir(SaveFigPath)
-    os.mkdir(SaveMoviePath)
-   
-
-TestPoints['Predictedbandgap'] = mlmf.TestModelTernaryPoints(TestPoints[xfeatures], TestPoints['BANDGAP'], SVMBandgapModel)
-TestPoints['predNATURE'] = mlmf.TestModelTernaryPoints(TestPoints[xfeatures], TestPoints['NATURE'],
-                                              SVCEgNatureModel, SVCclassification=True)
-
-TestPoints['AbsErrorBndgap'] = (TestPoints['Predictedbandgap'] - TestPoints['BANDGAP']).abs()
-BadSamples = TestPoints[TestPoints['AbsErrorBndgap'] > 0.15].copy()
-WrongPrediction = TestPoints[TestPoints['predNATURE'] != TestPoints['NATURE']].copy()
-CommonIdx = WrongPrediction.index.intersection(BadSamples.index)
-
-
-ax = mlpf.plot_true_predict_results(TestPoints['BANDGAP'], TestPoints['Predictedbandgap'], text='Bandgap over all samples (eV)',savehist=True,savepath=SaveFigPath)
-mlpf.plot_true_predict_results(BadSamples['BANDGAP'], BadSamples['Predictedbandgap'],ax=ax, my_color='r',marker='*',ShowLegend=False)
-mlpf.plot_true_predict_results(WrongPrediction['BANDGAP'], WrongPrediction['Predictedbandgap'],ax=ax, my_color='k',marker='.',
-                               save=True,figname='TruePredictFinal.png',savepath=SaveFigPath,ShowLegend=False)
-
-if SVRdependentSVC: 
-    sys.stdout = open(OutPutTxtFile, "a")
-    print("\n***************************************************************************")
-    print('The SVC prediction using the optimized hyperparameters from SVR (SVRdependentSVC)::')
-    print('Classification report:\n',classification_report(TestPoints['NATURE'], TestPoints['predNATURE']))
-    print(f"The accuracy score over all samples: {accuracy_score(TestPoints['NATURE'], TestPoints['predNATURE']):.3f}")
-    sys.stdout = oldstd
-    cm = confusion_matrix(TestPoints['NATURE'], TestPoints['predNATURE'])
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-    disp.plot()
-    disp.ax_.set_title('Bandgap nature prediction\n1=direct, 0=indirect')
-    disp.figure_.savefig(SaveFigPath+'/NatureTruePredict.png',bbox_inches = 'tight',dpi=300)
-    plt.close()
-    print("***************************************************************************\n")
-#%%%% Create the good samples database, deleting bad data from original database
-BadSamples_atom = mlpf.generate_scatter_data(BadSamples[['PHOSPHORUS', 'ANTIMONY', 'ARSENIC']]) 
-_ = mlpf.DrawRandomConfigurationPoints(BadSamples_atom, fname=None, titletext=None, 
-                                       savefig=False, scale=100,
-                                       axislabels = ["GaSb", "GaAs", "GaP"],axiscolors=None,
-                                       axislabelcolors=None, colorbar=True,
-                                       fontsize = 20,colors=BadSamples['STRAIN'],
-                                       cbar_label_txt='Strain (%)')
-
-WrongPrediction_atom = mlpf.generate_scatter_data(WrongPrediction[['PHOSPHORUS', 'ANTIMONY', 'ARSENIC']]) 
-_ = mlpf.DrawRandomConfigurationPoints(WrongPrediction_atom, fname=None, titletext=None, 
-                                       savefig=False, scale=100,
-                                       axislabels = ["GaSb", "GaAs", "GaP"],axiscolors=None,
-                                       axislabelcolors=None, colorbar=True,vmin=WrongPrediction['STRAIN'].min(),
-                                       vmax=WrongPrediction['STRAIN'].max(),
-                                       fontsize = 20,colors=WrongPrediction['STRAIN'],
-                                       cbar_label_txt='Strain (%)')
-_ = mlpf.DrawRandomConfigurationPoints(WrongPrediction_atom, fname=None, titletext=None, 
-                                       savefig=False, scale=100,
-                                       axislabels = ["GaSb", "GaAs", "GaP"],axiscolors=None,
-                                       axislabelcolors=None, colorbar=False,cmap='Set1',
-                                       fontsize = 20,colors=WrongPrediction['NATURE'])
-
-# _ = mlpf.Plot3DBandgapTernary(BadSamples['ARSENIC'], BadSamples['ANTIMONY'], BadSamples['STRAIN'], BadSamples['AbsErrorBndgap']\
-#                               ,textt=['GaP','GaSb','GaAs'], scale=100) 
-WrongPrediction.drop(index=CommonIdx, inplace=True)
-df.drop(index=BadSamples.index,inplace=True)
-# df.drop(index=WrongPrediction.index,inplace=True)
-
-conn = sq.connect('/home/bmondal/MachineLerning/BandGapML//DATAbase/BPD_ML_Total_DataBase_GaPAsSb_GoodData.db')
-df.to_sql("COMPUTATIONALDATA", conn, index=False,if_exists='fail')
-conn.close()
-#%%%-------------------- Predictions ------------------------------------------
-#%%%%--------------- Bloch weight models --------------------------------------
-if multiregression or regressorchain:            
-    loaded_model = pickle.load(open(svr_bw+'.sav', 'rb'))
-    AllBws = loaded_model.predict(predict_points)
-else:
-    for I in yfeatures:
-        save_f = svr_bw_dm + I
-        loaded_model = pickle.load(open(save_f+'.sav', 'rb'))
-        
-#%%%%-------------- Lattice parameter model -----------------------------------
-lattice_loaded_model = pickle.load(open(svr_lp+'.sav', 'rb'))
-EqulibriumDataModel = predict_points[predict_points['STRAIN']==0].reset_index(drop=True)
-LatticeParameterData = lattice_loaded_model.predict(EqulibriumDataModel)
-substraindict = {}
-for I in range(len(subname)):
-        substraindict[subname[I]]=(sublattice[I] - LatticeParameterData)/\
-            LatticeParameterData * 100
-EqulibriumDataModel = EqulibriumDataModel.join(pd.DataFrame(substraindict))
-
-#%%%%%............... Plot 2d ternary data ....................................
-movdirname = "/home/bmondal/MachineLerning/BandGapML/MOVIE/GaPAsSb/SubstrateStrainHeatmap/"
-WhichSubstrate = 'GaAs'
-EqmDf = mlpf.generate_heatmap_data(EqulibriumDataModel[['PHOSPHORUS', 'ARSENIC', \
-                                                        'ANTIMONY',WhichSubstrate]])   
-vmin = EqulibriumDataModel[WhichSubstrate].min()
-vmax = EqulibriumDataModel[WhichSubstrate].max()
-_ = mlpf.DrawSnapshot(EqmDf,fname=movdirname+WhichSubstrate+'_sub.png', savefig=1, scale=100,
-                      axislabels=["GaSb", "GaAs", "GaP"],cbarlabel='Substrate strain (%)',
-                      vmin=-5, vmax=5,titletext=f'Substrate: {WhichSubstrate}') 
-
-#%%%%---------------- Load Bandgap models -------------------------------------
-bandgapmag_model = pickle.load(open(svr_bandgap+'.sav', 'rb')) 
-SVRdependentSVC = True
-saveFig=False
-BandgapNatureModel = pickle.load(open(svc_EgNature+'.sav', 'rb'))
-if SVRdependentSVC: 
-    params = bandgapmag_model['svrm'].get_params()
-    params.pop('epsilon')
-    BandgapNatureModel['svrm'].set_params(**params)
-    SaveFigPath += '/SVRdependentSVC/'
-    SaveMoviePath += '/SVRdependentSVC/'
-    os.mkdir(SaveFigPath)
-    os.mkdir(SaveMoviePath)
-    Y_predict_all = np.asarray(BandgapNatureModel.predict(df[xfeatures]), dtype=int)
-    print(f"The accuracy score for prediction: {accuracy_score(df['NATURE'],Y_predict_all):.3f}")   
-    labels = np.asarray(BandgapNatureModel['svrm'].classes_, dtype=int)    
-    cm2 = confusion_matrix(df['NATURE'], Y_predict_all, labels=labels)
-    disp2 = ConfusionMatrixDisplay(confusion_matrix=cm2,display_labels=labels)
-    disp2.plot()
-    disp2.ax_.set_title('Bandgap nature prediction\n1=direct, 0=indirect')
-    if saveFig:
-        disp2.figure_.savefig(SaveFigPath+'/NatureTruePrediction.png',bbox_inches = 'tight',dpi=300)
-        plt.close()
-    else:
-        plt.show()   
-    # print('Classification report:\n',classification_report(df[yfeatures],Y_predict_all))
+#%%%%---------- Test ternary trained model on known ternary -------------------
+if DataCuration:
+    svr_bandgap = dirpathSystem+"/TEST_BPD/MODELS/neg_root_mean_squared_error/svrmodel_bandgap"
+    svc_EgNature = dirpathSystem+"/TEST_BPD/MODELS/accuracy/svcmodel_EgNature_binary"
+    SVRdependentSVC=False
+    print(f"Testing binary trained model on known ternary date: {datetime.now()}\n")
+    TestPoints = df[xfeatures+['BANDGAP','NATURE']].copy()
+    SVMBandgapModel = pickle.load(open(svr_bandgap+'.sav', 'rb')) # Bandgap model 
+    SVCEgNatureModel = pickle.load(open(svc_EgNature+'.sav', 'rb')) # Bandgap nature model
+    if SVRdependentSVC: 
+        params = SVMBandgapModel['svm'].get_params()
+        params.pop('epsilon')
+        SVCEgNatureModel['svm'].set_params(**params)   
     
-#%%%%.................... Create Bandgap nature contours ......................
+    TestPoints['Predictedbandgap'] = mlmf.TestModelTernaryPoints(TestPoints[xfeatures], TestPoints['BANDGAP'], SVMBandgapModel)
+    TestPoints['predNATURE'] = mlmf.TestModelTernaryPoints(TestPoints[xfeatures], TestPoints['NATURE'],
+                                                           SVCEgNatureModel, SVCclassification=True)
+    
+    TestPoints['AbsErrorBndgap'] = (TestPoints['Predictedbandgap'] - TestPoints['BANDGAP']).abs()
+    BadSamples = TestPoints[TestPoints['AbsErrorBndgap'] > 0.15].copy()
+    WrongPrediction = TestPoints[TestPoints['predNATURE'] != TestPoints['NATURE']].copy()
+    CommonIdx = WrongPrediction.index.intersection(BadSamples.index)
+    
+    
+    ax = mlpf.plot_true_predict_results(TestPoints['BANDGAP'], TestPoints['Predictedbandgap'], text=None,savehist=False,savepath=SaveFigPath)
+    ax.scatter(BadSamples['BANDGAP'], BadSamples['Predictedbandgap'], color='r',marker='*')
+    ax.scatter(WrongPrediction['BANDGAP'], WrongPrediction['Predictedbandgap'], color='k',marker='.')
+    # plt.savefig(SaveFigPath+'/TruePredictBadSamples.png',bbox_inches = 'tight',dpi=300)
+    #%%%%
+    BADSAMPLESATOMNUMBER = BadSamples.copy()
+    BADSAMPLESATOMNUMBER[['PHOSPHORUS', 'ANTIMONY', 'ARSENIC']] = (BADSAMPLESATOMNUMBER[['PHOSPHORUS', 'ANTIMONY', 'ARSENIC']] * 2.16).astype(int)
+    #%%%% Create the good samples database, deleting bad data from original database
+    BadSamples_atom = mlpf.generate_scatter_data(BadSamples[['PHOSPHORUS', 'ANTIMONY', 'ARSENIC']]) 
+    _ = mlpf.DrawRandomConfigurationPoints(BadSamples_atom, fname=None, titletext='Bad bandgap values', 
+                                           savefig=False, scale=100,DrawGridLines=True,
+                                           axislabels = ["GaSb", "GaAs", "GaP"],axiscolors=None,
+                                           axislabelcolors=None, colorbar=True,vmin=BadSamples['STRAIN'].min(),
+                                           vmax=BadSamples['STRAIN'].max(),
+                                           fontsize = 20,colors=BadSamples['STRAIN'],
+                                           cbar_label_txt='Strain (%)')
+    _ = mlpf.DrawRandomConfigurationPoints(BadSamples_atom, fname=None, titletext='Bad bandgap values', 
+                                           savefig=False, scale=100,DrawGridLines=True,
+                                           axislabels = ["GaSb", "GaAs", "GaP"],axiscolors=None,
+                                           axislabelcolors=None, colorbar=True,vmin=BadSamples['AbsErrorBndgap'].min(),
+                                           vmax=BadSamples['AbsErrorBndgap'].max(),
+                                           fontsize = 20,colors=BadSamples['AbsErrorBndgap'],
+                                           cbar_label_txt='AbsErrorBndgap (eV)')
+    
+    WrongPrediction_atom = mlpf.generate_scatter_data(WrongPrediction[['PHOSPHORUS', 'ANTIMONY', 'ARSENIC']]) 
+    _ = mlpf.DrawRandomConfigurationPoints(WrongPrediction_atom, fname=None, titletext='Wrong bandgap nature prediction', 
+                                           savefig=False, scale=100,
+                                           axislabels = ["GaSb", "GaAs", "GaP"],axiscolors=None,
+                                           axislabelcolors=None, colorbar=True,vmin=WrongPrediction['STRAIN'].min(),
+                                           vmax=WrongPrediction['STRAIN'].max(),
+                                           fontsize = 20,colors=WrongPrediction['STRAIN'],
+                                           cbar_label_txt='Strain (%)')
+    _ = mlpf.DrawRandomConfigurationPoints(WrongPrediction_atom, fname=None, titletext='Wrong bandgap nature prediction', 
+                                           savefig=False, scale=100,
+                                           axislabels = ["GaSb", "GaAs", "GaP"],axiscolors=None,
+                                           axislabelcolors=None, colorbar=False,cmap='Set1',
+                                           fontsize = 20,colors=WrongPrediction['NATURE'])
+    
+    # _ = mlpf.Plot3DBandgapTernary(BadSamples['ARSENIC'], BadSamples['ANTIMONY'], BadSamples['STRAIN'], BadSamples['AbsErrorBndgap']\
+    #                               ,textt=['GaP','GaSb','GaAs'], scale=100) 
+    WrongPrediction.drop(index=CommonIdx, inplace=True)
+    df.drop(index=BadSamples.index,inplace=True)
+    # df.drop(index=WrongPrediction.index,inplace=True)
+    
+    conn = sq.connect('/home/bmondal/MachineLerning/BandGapML_project/DATAbase/Total_BPD_MLDataBase_GaPAsSb_GoodData.db')
+    df.to_sql("COMPUTATIONALDATA", conn, index=False,if_exists='fail')
+    conn.close()
+#%%%%---------------- Load models ---------------------------------------------
+LoadSVMFinalBPD = '/home/bmondal/MachineLerning/BandGapML_project/GaPAsSb/RESULTS/ORIGINALdataSET/'
+svr_bandgap = LoadSVMFinalBPD+'TEST_BPD/MODELS/neg_root_mean_squared_error/svrmodel_bandgap'
+svc_EgNature = LoadSVMFinalBPD+'TEST_BPD/MODELS/accuracy/svcmodel_EgNature_binary'
+svr_lp = LoadSVMFinalBPD+'TEST_BPD_lp/MODELS/svrmodel_lp'
+SaveMoviePath = LoadSVMFinalBPD+'TEST_BPD/MOVIE/neg_root_mean_squared_error/'
+SaveFigPath = LoadSVMFinalBPD+'TEST_BPD/PostProcessingFigs/'
+SubstrateEffect = SaveFigPath+'/SubstrateEffect/'
+SaveHTMLPath = LoadSVMFinalBPD+'TEST_BPD/HTML/'
+if not os.path.isdir(SaveFigPath): 
+    os.makedirs(SaveFigPath,exist_ok=True)
+    os.makedirs(SubstrateEffect,exist_ok=True)
+    os.makedirs(SaveHTMLPath,exist_ok=True)
+bandgapmag_model = pickle.load(open(svr_bandgap+'.sav', 'rb')) 
+BandgapNatureModel = pickle.load(open(svc_EgNature+'.sav', 'rb'))
+SVRdependentSVC = False
+if SVRdependentSVC: 
+    params = bandgapmag_model['svm'].get_params()
+    params.pop('epsilon')
+    BandgapNatureModel['svm'].set_params(**params)
+     
 WithPaddingData = False
 Xp, Yp, POINTS_, CondPOSI, Zval = mlgf.CreateDataForPredictionLoopV3(resolution=101,
                                                                     compositionscale=100,
                                                                     WithPadding=WithPaddingData,
                                                                     features=xfeatures) 
+#%%%%.................... Create Bandgap nature contours ......................
 StrainMin = -5;  StrainMax = 5; StrainPoints = 101
 StrainArray = np.linspace(StrainMin, StrainMax, StrainPoints)
 TotalSnapShot = len(StrainArray)
 Predictions={}; cnt = {}; anticnt={}; CONTOURS = {}
+MAX_bandgap = 0
+
 for i in range(TotalSnapShot):#TotalSnapShot
     print(f"* Snapshot: {i+1}/{TotalSnapShot}")
     POINTS = POINTS_.copy()
@@ -349,19 +319,158 @@ for i in range(TotalSnapShot):#TotalSnapShot
     Predictions[StrainArray[i]] = POINTS
     cnt[StrainArray[i]] = contours
     anticnt[StrainArray[i]] = anticontours
-    CONTOURS[StrainArray[i]] = Contours     
+    CONTOURS[StrainArray[i]] = Contours 
+    MAX_bandgap_tmp = POINTS['bandgap'].max()
+    if MAX_bandgap_tmp>MAX_bandgap: 
+        MAX_bandgap=MAX_bandgap_tmp
+        tmp_max_value_info = POINTS.iloc[POINTS['bandgap'].argmax()]
 
-#%%+++++++++++++++++++++++++++++++ Plotting +++++++++++++++++++++++++++++++++++
+print(f"\nThe maximum bandgap value is found at \n{tmp_max_value_info}")
+   
+#%%%%-------------- Create bandgaps for substrate strain (contours) -----------
+if UseLatticeParamterModel or UseVegardsLaw:
+    EqulibriumDataModel = POINTS_.copy()
+    EqulibriumDataModel['STRAIN'] = 0.0
+    if UseVegardsLaw:
+        print("Using the Vegard's law to calculate the unstrained lattice parameters.")
+        EqulibriumDataModel['LATTICEPARAMETER1'] = mlgf.CalculateLatticeParametersFromVegardsLaw_ternary(EqulibriumDataModel,
+                                                                                                          ['PHOSPHORUS', 'ANTIMONY', 'ARSENIC'])
+    else: 
+        print("Using the SVR-RBF model to calculate the unstrained lattice parameters.")
+        svr_lp += '.sav'
+        assert os.path.isfile(svr_lp), 'The lattice parameter model does not exists.'
+        lattice_loaded_model = pickle.load(open(svr_lp, 'rb'))
+        EqulibriumDataModel['LATTICEPARAMETER1'] = lattice_loaded_model.predict(EqulibriumDataModel)
+        
+    EqulibriumDataModel = EqulibriumDataModel.join(mlgf.CreateSubstrateStrainData(subname,EqulibriumDataModel['LATTICEPARAMETER1']))
+else:
+    EqulibriumDataModel = EqulibriumData.copy()
+
+Sub_Predictions={}; Sub_cnt = {}; Sub_anticnt={}; Sub_CONTOURS = {}
+for SubstrateName in subname:
+    print(f"Substrate = {SubstrateName}")
+    POINTS = EqulibriumDataModel[['PHOSPHORUS', 'ANTIMONY', 'ARSENIC']].copy()
+    POINTS['STRAIN'] = EqulibriumDataModel[SubstrateName].copy()
+    bandgapEgseparationline = BandgapNatureModel.decision_function(POINTS[xfeatures])
+    POINTS['bandgap'] = bandgapmag_model.predict(POINTS[xfeatures])
+    POINTS['EgN'] = BandgapNatureModel.predict(POINTS[xfeatures])
+    Sub_Predictions[SubstrateName] = POINTS
+    if UseLatticeParamterModel or UseVegardsLaw:
+        Zval[CondPOSI] = bandgapEgseparationline
+        if WithPaddingData:
+            Zval[:,0] = Zval[0,:] = -1
+            for I in range(1,len(Zval)): Zval[I,-I] = -1
+        else:
+            Zval = mlpf.UpdateCornersForContours(Zval)   
+        contours = mlpf.GetContoursf(Xp,Yp,Zval)
+        anticontours = mlpf.GetContoursf(Xp,Yp,Zval,anti_contour=True)
+        Contours = mlpf.GetContours(Xp,Yp,Zval, TernaryConversion=0)
+    else:
+        contours, anticontours, Contours = None, None, None
+    Sub_cnt[SubstrateName] = contours
+    Sub_anticnt[SubstrateName] = anticontours
+    Sub_CONTOURS[SubstrateName] = Contours 
+
+#%%+++++++++++++++++++++++ Plotting +++++++++++++++++++++++++++++++++++++++++++
 axislabels = ["GaAs", "GaSb", "GaP"] # Left, right, bottom
 AxesLabelcolors = None #{'b':'r','l':'b','r':'g'}
 AxisColors=None #{'b':'g','l':'r','r':'b'}
-textt = ['GaP','GaSb','GaAs'] #l,r,t
-#%%% ---------------------------- Plot Bandgap Ternary plot -------------------
+textt = ['GaP','GaSb','GaAs'] #l,r,t    
+
+#%%%************************ Plotting substate strains ************************
+#%%%%............. DFT  unstrained compositions in database ...................
+_ = mlpf.DrawSnapshot(None, RawData=EqmDf,RawDataColor=EqulibriumData['NATURE'],
+                      fname=f"{SubstrateEffect}/All_Strain0_dft.png", savefig=1, scale=100,
+                      axislabels=["GaAs", "GaSb", "GaP"],cbarlabel='Bandgap nature (1:Direct, 0:Indirect)', #titletext=f'Substrate: {WhichSubstrate}',
+                      DrawRawData=True,cbarpos='bottom',show_colorbar=True,
+                      vmin=None,vmax=None) 
+#%%%%.................. Plot substate strains .................................
+for SubstrateName in subname:
+    SubstrateStrainSeries = EqulibriumData[SubstrateName]   
+    vmin = SubstrateStrainSeries.min(); vmax = SubstrateStrainSeries.max()
+    _ = mlpf.DrawRandomConfigurationPoints(EqmDf, fname=f"{SubstrateEffect}/{SubstrateName}_sub_dft.png", #titletext=f'Substrate = {SubstrateName}', 
+                                            savefig=True, scale=100, cbarpos='bottom',
+                                            axislabels = ["GaAs", "GaSb", "GaP"],axiscolors=None,
+                                            axislabelcolors=None, colorbar=True,cbar_label_txt='Substrate strain (%)',
+                                            fontsize = 20, colors=SubstrateStrainSeries,vmin=vmin, vmax=vmax)                                
+#%%%%................ Plot 3d substate strains ................................
+if not Disable3dFigsGrawing:
+    fig3d, ax3d = None, None
+    for SubstrateName in subname:
+        SubstrateStrainValues = EqulibriumData[SubstrateName]
+        fig3d, ax3d = mlpf.Plot3DBandgapTernary(EqulibriumData['ARSENIC'], EqulibriumData['ANTIMONY'], 
+                                                SubstrateStrainValues,SubstrateStrainValues,
+                                                titletxt=None, cbar_txt=f'Strain(%) [{SubstrateName} substrate]',
+                                                textt=['GaP','GaAs','GaSb'], scale=100, ax=ax3d, fig=fig3d) 
+#%%%%%............... Plot 2d ternary data ....................................
+if UseVegardsLaw: 
+    SubstrateEffect += '/VegardsEqm'
+elif UseLatticeParamterModel:
+    SubstrateEffect += '/LpModelEqm'
+if not os.path.isdir(SubstrateEffect): os.makedirs(SubstrateEffect,exist_ok=True)
+for SubstrateName in subname:
+    print(f'Creating figure for {SubstrateName}')
+    if UseLatticeParamterModel or UseVegardsLaw:
+        Sub_Predictions[SubstrateName] = Sub_Predictions[SubstrateName][(Sub_Predictions[SubstrateName]['STRAIN']).abs() <5]
+        EqmDf_ = mlpf.generate_heatmap_data(Sub_Predictions[SubstrateName][['PHOSPHORUS', 'ANTIMONY', 'ARSENIC', 'bandgap']])   
+        DrawRawData = False
+        EqmDf__ = None
+        vmin = Sub_Predictions[SubstrateName]['STRAIN'].min(); vmax = Sub_Predictions[SubstrateName]['STRAIN'].max()
+        _ = mlpf.DrawSnapshot(mlpf.generate_heatmap_data(Sub_Predictions[SubstrateName][['PHOSPHORUS', 'ANTIMONY', 'ARSENIC', 'STRAIN']]),
+                              fname=f"{SubstrateEffect}/{SubstrateName}_sub_strain.png", savefig=1, scale=100,
+                              show_colorbar=True,COMContourText=['DIRECT','INDIRECT'],
+                              contours=None,UseContoursText=False, 
+                              ContoursText=None,
+                              axislabels=["GaAs", "GaSb", "GaP"],cbarlabel='Strain (%)', #titletext=f'Substrate: {WhichSubstrate}',
+                              vmin=-5, vmax=5,cbarpos='bottom',DrawRawData=False)
+    else:
+        EqmDf_ = None
+        EqmDf__ = mlpf.generate_scatter_data(Sub_Predictions[SubstrateName][['PHOSPHORUS', 'ANTIMONY', 'ARSENIC']]) 
+        DrawRawData = True  
+        _ = mlpf.DrawSnapshot(None,RawData=EqmDf__,RawDataColor=Sub_Predictions[SubstrateName]['EgN'],
+                              fname=f"{SubstrateEffect}/{SubstrateName}_sub_predict_nature", savefig=1, scale=100,
+                              axislabels=["GaAs", "GaSb", "GaP"],cbarlabel='Bandgap nature (1:Direct, 0:Indirect)', #titletext=f'Substrate: {WhichSubstrate}',
+                              DrawRawData=True,cbarpos='bottom',show_colorbar=True,
+                              vmin=None,vmax=None)
+        
+    vmin = Sub_Predictions[SubstrateName]['bandgap'].min(); vmax = Sub_Predictions[SubstrateName]['bandgap'].max()
+    _ = mlpf.DrawSnapshot(EqmDf_,fname=f"{SubstrateEffect}/{SubstrateName}_sub_predict_bandgap.svg", savefig=1, scale=100,
+                          show_colorbar=True,COMContourText=['DIRECT','INDIRECT'],cmap=plt.cm.RdYlBu_r,
+                          contours=[Sub_CONTOURS[SubstrateName]],UseContoursText=False, 
+                          ContoursText=[Sub_cnt[SubstrateName], Sub_anticnt[SubstrateName]],
+                          axislabels=["GaAs", "GaSb", "GaP"],cbarlabel='E$_{\mathrm{g}}$ (eV)', #titletext=f'Substrate: {WhichSubstrate}',
+                          vmin=0, vmax=2.5,cbarpos='bottom',RawData=EqmDf__,
+                          RawDataColor=Sub_Predictions[SubstrateName]['bandgap'],DrawRawData=DrawRawData)  
+#%%%%................ Plot 3d substate strains ................................
+if not Disable3dFigsGrawing:
+    fig3d, ax3d = None, None
+    for SubstrateName in subname:
+        SubstrateStrainValues = Sub_Predictions[SubstrateName]['STRAIN']
+        fig3d, ax3d = mlpf.Plot3DBandgapTernary(Sub_Predictions[SubstrateName]['ARSENIC'], Sub_Predictions[SubstrateName]['ANTIMONY'], 
+                                                SubstrateStrainValues,SubstrateStrainValues,
+                                                titletxt=None, cbar_txt=f'Strain(%) [{SubstrateName} substrate]',
+                                                textt=['GaP','GaAs','GaSb'], scale=100, ax=ax3d, fig=fig3d) 
+#%%%%................ Compare substate strains model and vg law................
+if UseLatticeParamterModel:
+    if UseVegardsLaw:
+        svr_lp += '.sav'
+        assert os.path.isfile(svr_lp), 'The lattice parameter model does not exists.'
+        lattice_loaded_model = pickle.load(open(svr_lp, 'rb'))
+        XX_lp = lattice_loaded_model.predict(EqulibriumDataModel[['PHOSPHORUS', 'ANTIMONY', 'ARSENIC', 'STRAIN']])
+    else:
+        XX_lp = EqulibriumDataModel['LATTICEPARAMETER1']
+    LATTICEPARAMETER1_vegards = mlgf.CalculateLatticeParametersFromVegardsLaw_ternary(EqulibriumDataModel,['PHOSPHORUS', 'ANTIMONY', 'ARSENIC'])
+    mlpf.plot_test_results(XX_lp,LATTICEPARAMETER1_vegards,
+                           xlabel_text='Model predictions',ylabel_txt="Vegard's law",data_unit_label='$\AA$',
+                           save=1, savepath=f"{SubstrateEffect}", figname="VegardsLaw_lp_Modelprediction_compare.png")
+
+#%%%********************* Plot Bandgaps ***************************************
 #%%%%....................... 3D scatter plot bandgap ..........................
-pp = pd.concat(Predictions.values()).reset_index(drop=True)
-_ = mlpf.Plot3DBandgapTernary(pp['ARSENIC'], pp['ANTIMONY'], pp['STRAIN'], pp['bandgap'],textt=textt, scale=100) 
+if not Disable3dFigsGrawing:
+    pp = pd.concat(Predictions.values()).reset_index(drop=True)
+    _ = mlpf.Plot3DBandgapTernary(pp['ARSENIC'], pp['ANTIMONY'], pp['STRAIN'], pp['bandgap'],textt=textt, scale=100) 
 #%%%%....................... 2D heatmap plot bandgap ..........................
-BandGapNatureHeatmap = 1
+BandGapNatureHeatmap = 0
 OnlyContours = 0
 if BandGapNatureHeatmap:
     tmp_featureseg = ["PHOSPHORUS",'ANTIMONY','ARSENIC','STRAIN','EgN']
@@ -369,37 +478,38 @@ if BandGapNatureHeatmap:
 else:
     tmp_featureseg = ["PHOSPHORUS",'ANTIMONY','ARSENIC','STRAIN','bandgap']
     WhicColormap = plt.cm.RdYlBu_r
-mlpf.GenerateHeatmapSnapShots(StrainArray[:1], tmp_featureseg, Predictions, movdirname=SaveMoviePath, 
+mlpf.GenerateHeatmapSnapShots(StrainArray, tmp_featureseg, Predictions, movdirname=SaveMoviePath, 
                               generatetitle=1, savefig=1, axislabels=axislabels,
                               axiscolors=AxisColors,axislabelcolors=AxesLabelcolors,
-                              scale=100,vmin=0, vmax=2.5, cbarlabel='E$_{\mathrm{g}}$ (eV)',
+                              scale=100,vmin=0, vmax=2.5, cbarlabel='E$_{\mathrm{g}}$ (eV)',  #E$_{\mathrm{g}}$
                               cmap=WhicColormap, cbarpos='bottom',contours=CONTOURS,
                               BandGapNatureHeatmap=BandGapNatureHeatmap,OnlyContour=OnlyContours,
                               UseContoursText=False, ContoursText=[cnt, anticnt],
-                              COMContourText=['D','I'],RawData=df,RawDataColorColumn='NATURE',DrawRawData=0)
+                              COMContourText=['DIRECT','INDIRECT'],RawData=df,RawDataColorColumn='NATURE',DrawRawData=0)
 
 #%%%%% ``````````````` Draw all the contours in 3D ````````````````````````````
-figcont, axcont = mlpf.DrawAllContour3D(CONTOURS, fname=None, #cmap=None,
-                                        savefig=False, scale=100, vmin=StrainMin, vmax=StrainMax,
-                                        textt=['GaSb','GaP','GaAs'], ScatterPlot=False)
-
-DrawSubstrate = 0
-if DrawSubstrate:
-    SubstrateName = 'GaAs'; UseThisDataFrame = EqulibriumDataModel.copy()
-    MEqulibriumData  = UseThisDataFrame.mask((UseThisDataFrame[SubstrateName]<StrainMin) \
-                                             | (UseThisDataFrame[SubstrateName]>StrainMax))
-    cc = MEqulibriumData[SubstrateName] #'gray'
-    _ = mlpf.Plot3DBandgapTernary(MEqulibriumData['PHOSPHORUS'], MEqulibriumData['ARSENIC'],
-                                  MEqulibriumData[SubstrateName],cc,
-                                  ax=axcont, fig=figcont,textt=['','',''], scale=1,
-                                  ShowColorbar=False) 
+if not Disable3dFigsGrawing:
+    figcont, axcont = mlpf.DrawAllContour3D(CONTOURS, fname=None, #cmap=None,
+                                            savefig=False, scale=100, vmin=StrainMin, vmax=StrainMax,
+                                            textt=['GaSb','GaP','GaAs'], ScatterPlot=False)
+    
+    DrawSubstrate = 1
+    if DrawSubstrate:
+        SubstrateName = 'GaAs'; UseThisDataFrame = EqulibriumDataModel.copy()
+        MEqulibriumData  = UseThisDataFrame.mask((UseThisDataFrame[SubstrateName]<StrainMin) \
+                                                 | (UseThisDataFrame[SubstrateName]>StrainMax))
+        cc = MEqulibriumData[SubstrateName] #'gray'
+        _ = mlpf.Plot3DBandgapTernary(MEqulibriumData['PHOSPHORUS'], MEqulibriumData['ARSENIC'],
+                                      MEqulibriumData[SubstrateName],cc,
+                                      ax=axcont, fig=figcont,textt=['','',''], scale=1,
+                                      ShowColorbar=False) 
 #%%%%%````````````````````` Draw all contours together ````````````````````````
 _ = mlpf.DrawAllContour(CONTOURS,fname=SaveFigPath+'/AllContours.png', titletext=None,
                         axislabels = axislabels,cbarpos='bottom',
-                        savefig=0, scale=100, vmin=StrainMin, vmax=StrainMax,
+                        savefig=1, scale=100, vmin=StrainMin, vmax=StrainMax,
                         cmap=plt.cm.get_cmap('viridis'))
 #%%%------------------------ Create movie from snapshots ----------------------
-createmovie = True
+
 if createmovie:
     images = []
     imgs = sorted(glob.glob(SaveMoviePath+"conf*.png"))
@@ -409,35 +519,43 @@ if createmovie:
     _ = mlpf.MakeEgStrainSnapShotMovie(images, movdirname=SaveMoviePath, savefig = 1)
 
 #%%++++++++++++++++++++++++ Draw for html +++++++++++++++++++++++++++++++++++++
-DrawHtmls = 1
 if DrawHtmls:
     webdirname = SaveHTMLPath + '/'
-    os.mkdir(webdirname)
+    # os.mkdir(webdirname)
     AxisLabels = ['GaP','GaSb','GaAs'] # Bottom, right, left
     cbarlabel='Strain(%)'
     #%%% ---------------- Draw Bandgap ( + nature contours) -----------------------
     #%%%%.............. Draw heatmaps (+contours) with slider in html .............
-    fname = webdirname + 'BandgGapHeatMap.html'
+    fname = webdirname + 'BandgGapHeatMap_t.html'
+    # TestPredictions = {XX[0]:XX[1] for XX in list(Predictions.items())[:3]}
+    # _ = mlwpfP2.DrawBandgapHeatmapWebSlider(TestPredictions, ["PHOSPHORUS",'ANTIMONY','bandgap'], [cnt, cnt, anticnt], StrainArray, 
+    #                                         ContourText=['DIRECT','INDIRECT'],
+    #                                         fname=fname, titletext=None,
+    #                                         savefig=1, step=10,
+    #                                         cmappp="viridis",color='black', 
+    #                                         line_width=4, text=AxisLabels,
+    #                                         scale=100,vmin=0, vmax=2.5, cbarlabel='Bandgap value (eV)'
+    #                                         )
     TestPredictions = {XX[0]:XX[1] for XX in list(Predictions.items())[:3]}
-    _ = mlwpfP2.DrawBandgapHeatmapWebSlider(TestPredictions, ["PHOSPHORUS",'ANTIMONY','bandgap'], [cnt, cnt, anticnt], StrainArray, 
-                                            ContourText=['D','I'],
+    _ = mlwpfP2.DrawBandgapHeatmapWebV2Slider(TestPredictions, ["PHOSPHORUS",'ANTIMONY','bandgap'], [cnt, cnt, anticnt],  
+                                            ContourText=['DIRECT','INDIRECT'],
                                             fname=fname, titletext=None,
-                                            savefig=1, step=10,
+                                            savefig=1, step=10,page_title='GaAsPSb Bandgap phase diagram',
                                             cmappp="viridis",color='black', 
                                             line_width=4, text=AxisLabels,
-                                            scale=100,vmin=0, vmax=2.5, cbarlabel='Eg'
+                                            scale=100,vmin=0, vmax=2.5, cbarlabel='Bandgap value (eV)'
                                             )
     #%%% ----------------------- Draw Bandgap Nature contours -----------------
     #####.............. Draw all contours with slider in html .................
     #####........ Draw all contours with Multi Select in html..................
     fname = webdirname + 'MergeLayoutsAllContourV2.html'
     sliderlayoutv2 = mlwpf.DrawAllContourWebSliderV2([cnt, cnt, anticnt], StrainArray, CoverPage=CONTOURS,
-                                                     ContourText=['D','I'],
+                                                     ContourText=['DIRECT','INDIRECT'],
                                                      IntializeContourText='', 
                                                      savefig=0, scale=100, vmin=StrainMin, vmax=StrainMax,fname=fname,
                                                      step=10,text=AxisLabels,cbarlabel=cbarlabel)
     multiselectlayoutv2 = mlwpf.DrawAllContourWebMultiSelectV2([cnt, cnt, anticnt], StrainArray, CoverPage=CONTOURS,
-                                                               ContourText=['D','I'],
+                                                               ContourText=['DIRECT','INDIRECT'],
                                                                IntializeContourText='',
                                                                savefig=0, scale=100, vmin=StrainMin, vmax=StrainMax,fname=fname,
                                                                step=10,text=AxisLabels,cbarlabel=cbarlabel)
@@ -448,3 +566,23 @@ if DrawHtmls:
     #%%%%............... Draw 3D scatter plot DITs ................................
     fname = webdirname + "Contour3D.html"
     mlwpf.DrawAllContour3D(CONTOURS, StrainArray, fname=fname)
+
+    #%%%%.. Draw substrate heatmaps (+contours) with slider in html ...........
+    _ = mlwpfP2.DrawBandgapHeatmapWebV2Slider(Sub_Predictions, 
+                                              ["PHOSPHORUS",'ANTIMONY','bandgap'], [Sub_cnt, Sub_cnt, Sub_anticnt], 
+                                              ContourText=['DIRECT','INDIRECT'],fname=f"{webdirname}/SubstrateEffectHeatMap_Bandgap.html",
+                                              titletext=None,DrawNatureContours=False,
+                                              savefig=1, step=10,page_title='GaAsPSb Bandgap phase diagram substrate effect',
+                                              cmappp="viridis",color='black', 
+                                              line_width=4, text=AxisLabels,SelectionText='Substrate:',
+                                              scale=100,vmin=0, vmax=2.5, cbarlabel='Bandgap value (eV)'
+                                              )
+    _ = mlwpfP2.DrawBandgapHeatmapWebV2Slider(Sub_Predictions, 
+                                              ["PHOSPHORUS",'ANTIMONY','STRAIN'], None,
+                                              fname=f"{webdirname}/SubstrateEffectHeatMap_Strain.html", 
+                                              DrawNatureContours=False,
+                                              savefig=1, step=10,page_title='GaAsPSb Bandgap phase diagram substrate effect',
+                                              cmappp="viridis",color='black', 
+                                              line_width=4, text=AxisLabels,SelectionText='Substrate:',
+                                              scale=100,vmin=0, vmax=2.5, cbarlabel='Strain (%)'
+                                              )

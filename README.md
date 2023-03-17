@@ -18,15 +18,38 @@ density-functional-theory-based predictive computational approach for such an ex
 Further, we have developed efficient machine-learning models to accelerate such mapping in multinary systems. We show the application and great 
 benefit of this new predictive mapping on device design. 
 
-## General computational setup
+## General density-functinal-theory computational setup
 General computational setup.
 
 * Periodic DFT using VASP-5.4.4
 * Geometry optimization: PBE-D3 (BJ), PAW basis set 
-* Electronic properties: m-BJ, PAW basis set, spin-orbit coupling 
-* Super cell : 6x6x6, 10 SQS [[1]](https://www.brown.edu/Departments/Engineering/Labs/avdw/atat/manual/node74.html), 
-Γ-only, band unfolding [[2]](https://github.com/rubel75/fold2Bloch-VASP),[[3]](https://github.com/band-unfolding/bandup)
-* SVM(rbf) amchine learning models
+* Electronic properties: TB09 [[1]](https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.102.226401), PAW basis set, spin-orbit coupling 
+* Super cell : 6x6x6, 10 SQS [[2]](https://www.brown.edu/Departments/Engineering/Labs/avdw/atat/manual/node74.html), 
+Γ-only, band unfolding [[3]](https://github.com/rubel75/fold2Bloch-VASP),[[4]](https://github.com/band-unfolding/bandup)
+
+## Machine learning (ML) models
+
+* Supervised model
+	* ML model: Support Vector Machine with Radial Basis Function kernel (SVM-RBF) 
+		* Bandgap magnitude prediction: Support Vector Regression
+		* Bandgap nature prediction: Support Vector Classification
+		* Classification type:  binary (direct or indirect bandgap)
+## Softwares
+
+The ML models are implemented in `python scikit-learn` package. To run the above script you need the following packages:
+
+* python >3.6
+* matplotlib
+* scikit-learn
+* tensorflow (if NN section is used)
+* pandas
+* sqlite3
+* numpy
+* pickle
+* python-ternary
+* tensorflow_docs
+* bokeh (if html plot section is used)
+* holoview (if html plot section is used)
 
 ## References
 * III-V semiconductors bandgap phase diagram
