@@ -10,8 +10,100 @@ import numpy as np
 import sqlite3 as sq
 import pandas as pd
 import random
+import os, glob
 
+def CreateResultDirectories(dirpathSystem_,BinaryConversion, refitm):
+    SaveFigPath = dirpathSystem_ +'/Figs/' 
+    SaveMoviePath = dirpathSystem_ + '/MOVIE/' 
+    SaveHTMLPath = dirpathSystem_ + '/' +'HTML'
+    modelPATHS = dirpathSystem_+'/'+'MODELS'+'/'
+    if isinstance(refitm, str):
+        SaveFigPath += refitm + '/'
+        SaveMoviePath += refitm + '/'
+        SaveHTMLPath += refitm + '/'
+        modelPATHS += refitm + '/'
+        
+    OutPutTxtFile = modelPATHS + 'output.txt'
+    svr_bandgap = modelPATHS + 'svrmodel_bandgap'
+    svc_EgNature = modelPATHS + 'svcmodel_EgNature'
+    if BinaryConversion:
+        svc_EgNature += '_binary'
+    svr_bw = modelPATHS + 'svrmodel_bw'
+    svr_bw_dm = modelPATHS + 'DirectMultioutput/'
+    # os.makedirs(svr_bw_dm,exist_ok=True)
+    svr_lp = modelPATHS + 'svrmodel_lp'
+    
+    os.makedirs(SaveFigPath,exist_ok=True) 
+    os.makedirs(SaveMoviePath,exist_ok=True)
+    os.makedirs(SaveHTMLPath,exist_ok=True)
+    os.makedirs(modelPATHS,exist_ok=True)
+    
+    return SaveFigPath, SaveMoviePath, SaveHTMLPath, modelPATHS, OutPutTxtFile, svr_bandgap,\
+        svc_EgNature, svr_bw, svr_bw_dm, svr_lp
+        
+def CreateSubstrateStrainData(sub_lp_eg_dict,eqm_lp):
+    substraindict = {}
+    for SubstrateName in sub_lp_eg_dict:
+        substraindict[SubstrateName]=(sub_lp_eg_dict[SubstrateName][0] - eqm_lp) / eqm_lp *100
+    return pd.DataFrame(substraindict)
 
+def CalculateLatticeParametersFromVegardsLaw_ternary(EqulibriumDataModel,CompoundList,GroupIII='Ga',
+                                             LatticeParameters_bin = {'GaAs':5.689,'GaP':5.475,'GaSb':6.13383,'InAs':6.13756,'InP':5.93926,'InSb':6.55635},
+                                             GroupV_map = {'ARSENIC':'As','PHOSPHORUS':'P','ANTIMONY':'Sb'}):
+    lp = EqulibriumDataModel[CompoundList[0]]*LatticeParameters_bin[GroupIII+GroupV_map[CompoundList[0]]]
+    for compound in CompoundList[1:]:
+        if GroupIII is None: 
+            print('GroupIII can not be none.')
+            GroupIII='Ga'
+        bin_cmpd =GroupIII+GroupV_map[compound]
+        lp += EqulibriumDataModel[compound]*LatticeParameters_bin[bin_cmpd]
+    return 0.01*lp
+        
+def SetSplitLearningParams(IIII, df, df_bintern, df_qua, SplitInputData=False,trainlp=False, 
+                           LearningCurve = False, LearningCurveT3 = False,SVRdependentSVC=False):
+    trainlatticeparameter = False
+    if IIII == 'BT':
+        df_train = df_bintern.copy(); df_test=df_qua.copy()
+    elif IIII == 'Q':
+        df_train = df_qua.copy(); df_test=df_bintern.copy()
+    if IIII == 'BT_ct':
+        df_train = df_bintern.copy(); df_test=df_qua.sample(frac=0.25,axis=0,ignore_index=False).reset_index(drop=True)
+    elif IIII == 'Q_ct':
+        df_train = df_qua.copy(); df_test=df_bintern.sample(frac=0.25,axis=0,ignore_index=False).reset_index(drop=True)
+    elif IIII == 'BTq':
+        df_train = df_bintern.copy(); df_test=df_qua.copy()
+        SplitInputData=True
+        LearningCurveT3 = True
+    elif IIII == 'Qbt':
+        df_train = df_qua.copy(); df_test=df_bintern.copy()
+        SplitInputData=True
+        LearningCurveT3 = True
+    elif IIII == 'BTq_ct':
+        df_train = df_bintern.copy(); df_test=df_qua.copy()
+        SplitInputData=False
+        LearningCurveT3 = True
+    elif IIII == 'Qbt_ct':
+        df_train = df_qua.copy(); df_test=df_bintern.copy()
+        SplitInputData=False
+        LearningCurveT3 = True
+    elif IIII == 'BTQ':
+        df_train = df.copy(); df_test=None
+        LearningCurve = True
+        SVRdependentSVC=False
+    elif IIII == 'BPD':
+        df_train = df.copy(); df_test=None
+        SplitInputData=True
+        SVRdependentSVC=True
+    elif IIII == 'BPD_lp':
+        df_train = df.copy(); df_test=None
+        SplitInputData=True
+        SVRdependentSVC=False
+        trainlatticeparameter=True
+    else:
+        print(f"warning: The condition TEST_{IIII} is implemented.")
+
+    return df_train, df_test, SplitInputData, LearningCurve, LearningCurveT3,SVRdependentSVC,trainlatticeparameter
+    
 def ReturnGridResolution(gridResolution=None):
     # Number of points in composition and strain
     if gridResolution == 'ultrahigh':
@@ -346,6 +438,66 @@ def DropCommonDataPreviousDataBase(dbname, UnqueDB):
 
     return df, UnqueDB.drop(FindCommonIndex)
 
+def ReadOutputTxtFile(filename__):
+    pattern_3 = 'Training dataset size'
+    pattern_4 = ['out-of-sample','all-sample']
+    pattern_4_map = {'out-of-sample':'(o','all-sample':'(a'}
+    pattern_5 = ['r2_score','root_mean_squared_error','mean_absolute_error','max_error','accuracy_score','balanced_accuracy_score']
+    training_dataset = []; tmp_dict = {}
+    with open(filename__, 'r') as searchfile:
+        for line in searchfile.readlines():
+            if pattern_3 in line:
+                training_dataset.append(tmp_dict)
+                tmp_dict = {}
+                tmp_dict['dataset_size'] = int(line.split()[-1]) 
+            else:
+                for pattern_4_tmp in pattern_4:
+                    if (pattern_4_tmp in line) and (line.startswith(pattern_4_map[pattern_4_tmp])):
+                        for pattern_5_tmp in pattern_5:
+                            if pattern_5_tmp in line:
+                                split_val = (line.split(':')[-1]).split()
+                                put_val = float(split_val[0])
+                                if split_val[-1] == 'eV':
+                                    put_val *= 1000 #<-- eV to meV conversion 
+                                tmp_dict[pattern_4_tmp+'_'+pattern_5_tmp] = put_val
+        training_dataset.append(tmp_dict)
+    pp = pd.DataFrame(training_dataset[1:]) 
+    return pp
+
+def FindBestTrialBTQ(filename__):
+    SearchBPDTrials = glob.glob(filename__)
+    cv_score = []
+    fname = []
+    for SearchBPDT in SearchBPDTrials:
+        with open(SearchBPDT+'/output.txt', 'r') as SearchBPDTrial:
+            for line in SearchBPDTrial.readlines():
+                if line.startswith('Best parameter'):
+                    cv_score.append(float(line.split()[3].split('=')[-1]))
+                    fname.append(SearchBPDT)
+                    break
+    best_cv_score = np.argmax(cv_score)
+    return cv_score[best_cv_score], fname[best_cv_score]
+
+def SpecialPlots_1(filename):
+    OutdataFrame_c = {}
+    for fname in ['my_rmse_fix','accuracy']:
+        OutdataFrame = ReadOutputTxtFile(filename+'/MODELS/'+fname+'/output.txt')
+        if fname == 'BTQ':
+            SearchBPDTrials = glob.glob(f"{filename}/BPD/*/MODELS/{fname}/output.txt")
+            LastPointData = [OutdataFrame]
+            for OutPutTxtFile in SearchBPDTrials:
+                LastPointData.append(ReadOutputTxtFile(OutPutTxtFile))  
+            OutdataFrame = pd.concat(LastPointData, axis=0)
+        OutdataFrame_c[fname] = OutdataFrame
+    TMP = pd.concat(OutdataFrame_c.values())
+    return TMP
+
+def SpecialPlots_2(filename_list,metric,metric_nickname):
+    OutdataFrame_c = {}
+    for filename in filename_list:
+        OutdataFrame = ReadOutputTxtFile(f"{filename}/MODELS/{metric_nickname}/output.txt")
+        OutdataFrame_c[filename] = OutdataFrame[['dataset_size','out-of-sample_'+metric]]
+    return OutdataFrame_c
 # %%----------------- BWs-Eg nature conversion ---------------------------------
 
 

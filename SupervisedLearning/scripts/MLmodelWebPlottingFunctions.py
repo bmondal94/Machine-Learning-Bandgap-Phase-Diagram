@@ -573,8 +573,8 @@ def DrawAllContourWebSliderV2(cnt, strain, CoverPage=True,ContourText=None,
     p.multi_line(xs='x',ys='y', color='z', source=source, line_width=4)
     
     slider = Slider(start=-1, end=len(strain), value=-1, value_throttled=-1, step=1, 
-                    title="Snapshots",bar_color ='green',width_policy = 'fit',
-                    sizing_mode ="stretch_width")
+                    title='Slider::Snapshots',bar_color ='green',width_policy = 'fit',
+                    sizing_mode ="stretch_width",background='gray')
 
     slider_code = '''   
                     const i = cb_obj.value;
@@ -671,7 +671,7 @@ def DrawAllContourWebMultiSelectV2(cnt, strain, CoverPage=True,ContourText=None,
     RANGE = np.arange(0,len(strain),dtype=int).astype(str)
     STRAIN = [f'{s:.2f}' for s in strain]
     OPTIONS = [(r, s) for r,s in zip(RANGE,STRAIN)]
-    select = MultiSelect(title="Strain:",value=[], options=OPTIONS)
+    select = MultiSelect(title="Select strain(s) from below. Use shift key for multiple-select.",value=[], options=OPTIONS)
     
     select_code = '''   
                     const inds = cb_obj.value;

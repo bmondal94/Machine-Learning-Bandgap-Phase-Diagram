@@ -192,7 +192,7 @@ def DrawBandgapHeatmapWebV2(df, strain, fname="patch.html", titletext=None,
         return None
     else:
         return p
-
+    
 #%% ---------------- Define borders, axislabels with holoview -----------------
 def AxisBorders(scale,line_width):
 # Borders
@@ -335,7 +335,7 @@ def DrawBandgapHeatmapWebSlider(pp,XYZcloumns,countourset,strain, fname="patchh.
                               ) 
         hmapdict[ii]= overlay 
         
-    hmap = hv.HoloMap(hmapdict, kdims='Strain')
+    hmap = hv.HoloMap(hmapdict, kdims='Slider:: Strain')
 
     hv.output(widget_location='bottom')
     if savefig:
@@ -346,103 +346,74 @@ def DrawBandgapHeatmapWebSlider(pp,XYZcloumns,countourset,strain, fname="patchh.
     else:
         return hmap  
      
-def DrawBandgapHeatmapWebV2Slider(pp, strain, fname="patch.html", titletext=None,
-                          savefig=False, scale=1, vmin=-1, vmax=1,
-                          cmappp="viridis",color='black', 
-                          colorbar_cmap='Viridis256',
-                          line_width=4, text=['a','b','c'],
-                          offset_bottom=-0.14, offset_left=-0.15,offset_right=0.15,
-                          fontsize='3em', cbarlabel_fontsize='3em',cbarlabel='',
-                          label_colors=['black','black','black'],
-                          tick_colors=['black','black','black'],
-                          tick_length=3, TickLabel_fontsize='3em',step=0.1,
-                          SQRT3o2 = 0.8660254037844386):
+def DrawBandgapHeatmapWebV2Slider(pp,XYZcloumns,countourset, fname="patchh.html", titletext=None,
+                                ContourText=None,page_title = "Bandgap phase diagram",
+                                savefig=False, scale=1, vmin=-1, vmax=1,
+                                cmappp="viridis",color='black', DrawNatureContours=True,
+                                line_width=4, text=['a','b','c'],SelectionText='Slider:: Strain',
+                                offset_bottom=-0.14, offset_left=-0.15,offset_right=0.15,
+                                fontsize='3em', cbarlabel_fontsize='3em',cbarlabel='',
+                                label_colors=['black','black','black'],
+                                tick_colors=['black','black','black'],
+                                tick_length=3, TickLabel_fontsize='3em',step=0.1,
+                                SQRT3o2 = 0.8660254037844386):
     
-    
+    if DrawNatureContours:
+        cntNumber = len(countourset) # Total number of extra contour
+        if cntNumber>1:
+            if ContourText is None: 
+                ContourText = ['']*cntNumber
+            else:
+                assert cntNumber-1 <= len(ContourText), 'Total number of extra contours supplied is more than number of contour texts.'
 
     TOOLTIPS, FORMATTER = mlwpf.DefHoverTools(text=text)
     TOOLTIPS += [("Bandgap", "@values eV")]
     tool = HoverTool(tooltips = TOOLTIPS,formatters=FORMATTER)
     hmapdict = {}
-
-    for I in strain:
-        df = pp[pp['STRAIN']==I]
-
-        X, Y = ConversionCartesian2Ternary(df['PHOSPHORUS'], df['ANTIMONY']) 
-    
-        hex_with_values = hv.HexTiles((X, Y, df['bandgap']), vdims=['values'])
-        hex_with_values.opts(width=800, cmap=cmappp,
-                             clabel="Eg",#padding=(0.1,(0.15,0.1)),
-                             aggregator=np.mean, colorbar=False,
-                             tools=[tool],
-                             )
-        hmapdict[I]=hex_with_values
+    for ii, df in pp.items():
+        print(f'Strain: {ii} %')
+        frame_width_ = 1200
+        MarkerSize_ = frame_width_/scale
+        X, Y = ConversionCartesian2Ternary(df[XYZcloumns[0]], df[XYZcloumns[1]]) 
+        hex_with_values = hv.Points((X, Y,df[XYZcloumns[2]]), vdims='values')
+        hex_with_values.opts(color='values',tools=[tool],size=MarkerSize_,frame_width=frame_width_, data_aspect=1,
+                             colorbar=True,colorbar_opts={'title':'Bandgap (eV)'},marker='s',
+                             cmap=cmappp)
         
-    hmap_keys = list(hmapdict.keys())
-    
-    def MAPPING(SnapShot):
-        key = hmap_keys[SnapShot]
-        return hmapdict[key]
-    
-    stream = hv.streams.Stream.define('SnapShots', SnapShot=0)()
-    
-    dmap = hv.DynamicMap(MAPPING, streams=[stream])   
-    
-    slider_code = """
-                    var i = cb_obj.value;
-                    stream[0].update(SnapShot=i)
-                    """
-
-    slider_callback = CustomJS(args = dict(stream=[stream]), 
-                                code = slider_code)
-    
-    def modify_doc(doc):
-        # Create HoloViews plot and attach the document
-        # hvplot = renderer.get_plot(dmap, doc)
         
-        p = renderer.get_plot(dmap) #, doc
+        borders = AxisBorders(scale,line_width)
+        labels  = AxisLabelsHV(text,scale,offset_left,offset_right,offset_bottom,label_colors,
+                               fontsize=fontsize)
 
-        #p = hv.render(hex_with_values)
+        AxisTicksandLabelst = AxisTicks(scale,step,tick_colors, label_colors,
+                                        fontsize=fontsize,line_width=line_width)
+        overlay_list = [hex_with_values] + [borders] + labels + AxisTicksandLabelst
+        if DrawNatureContours:
+            #------------------ Contour line --------------------------------------
+            ContourLineX, ContourLineY = GetContoursV2(countourset[0][ii])
+            ContourLineList = []
+            for J in range(len(ContourLineX)):
+                curvepoints = (ContourLineX[J], ContourLineY[J])
+                ContourLine = hv.Curve(curvepoints).opts(line_color='black',line_width=line_width)
+                ContourLineList.append(ContourLine)
+            #----------------- Contour texts --------------------------------------
+            if cntNumber>1:
+                for IIII in range(1,cntNumber):
+                    XXtext = GetContoursV2Text(countourset[IIII][ii], textt=ContourText[IIII-1])
+                    llbels = hv.Labels(XXtext).opts(text_color='black', text_font_size=fontsize)
+                    ContourLineList.append(llbels)
+            #----------------------------------------------------------------------
+            overlay_list += ContourLineList
+        overlay = hv.Overlay(overlay_list) 
+        hmapdict[ii]= overlay 
         
-            # p.x_range=DataRange1d(start=offset_left*scale,end=scale+offset_right*scale)
-            # p.y_range=DataRange1d(start=offset_bottom*scale,end=scale*SQRT3o2+(-offset_bottom)*scale)
-            # p.update(sizing_mode="scale_height", aspect_ratio =1.3,
-            #             height_policy ='fit',
-            #             )
-            # ClearMatplotlibAxis(p)
-            # p = DefinePositionsBoundayLabels(p, scale, color=color, 
-            #                                   line_width=line_width, text=text,
-            #                                   offset_bottom=offset_bottom,
-            #                                   offset_left=offset_left,offset_right=offset_right,
-            #                                   fontsize=fontsize,label_colors=label_colors,
-            #                                   tick_colors=tick_colors,tick_length=tick_length,
-            #                                   TickLabel_fontsize=TickLabel_fontsize,
-            #                                   step=step)
-        
-        # color_bar = CreateColorBar(df['bandgap'].min(), df['bandgap'].max(),
-        #                            colorbar_cmap,cbarlabel_fontsize,cbarlabel)
-        # p.add_layout(color_bar, 'right')
+    hmap = hv.HoloMap(hmapdict, kdims=SelectionText)
 
-        start, end = 0, len(hmap_keys) - 1
-        slider = Slider(start=start, end=end, value=start, step=1, title='SnapShotss', height=30, width=180)
-
-    
-        slider.js_on_change('value', slider_callback)
-    
-        # Combine the holoviews plot and widgets in a layout
-        plot = layout([
-        [p.state],
-        [slider]], sizing_mode='scale_height')
-        #curdoc().add_root(plot)
-        doc.add_root(plot)
-        return doc
-    
-    
-    #show(modify_doc)
-    #output_file(fname,title="Bandgap phase diagram")
-    #save(plot)
-    # plotlist.append(p)
-    # hmap = hv.HoloMap(hmapdict, kdims='Strain')
-    # print(plotlist)
-    #hv.save(hmap,'plot.html',title="Bandgap phase diagram")
-    #save(hmap)
+    hv.output(widget_location='bottom')
+    if savefig:
+        print('**********Saving***********')
+        hv.save(hmap,fname,title=page_title)
+        print(f'Save at {fname}')
+        return None
+    else:
+        return hmap 

@@ -9,6 +9,7 @@ import numpy as np
 import matplotlib as mpl
 from matplotlib import cm
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FormatStrFormatter, MultipleLocator,LogLocator,ScalarFormatter,LogFormatter,LogFormatterMathtext,LogFormatterExponent,LogFormatterSciNotation
 from mpl_toolkits.mplot3d import Axes3D
 import ternary
 from matplotlib import animation
@@ -26,7 +27,7 @@ import tensorflow_docs.plots
 #          'ytick.labelsize': 24,
 #          'errorbar.capsize':2}
 # plt.rcParams.update(params)
-
+plt.rc('font', size=24)  
 #%% ---------------------------------------------------------------------------
 def plot_loss(history):
     plt.figure()
@@ -61,32 +62,61 @@ def PlotMatrices(metrices, history, nrows=2):
     for i, I in enumerate(metrices):
         plot_metrices(history, I, tn=TotalPlotN, nrows=nrows, ncols=ncols, index=(i+1))
     return 
-    
-def plot_test_results(XX, YY, text=None, my_color=None, tn=1, nrows=1, ncols=1, ShowLegend=True,
-                      index=1, save=False, savepath='.', figname='TruePrediction.png',marker=None):
-    plt.subplot(nrows, ncols, index, aspect='equal')
-    plt.scatter(XX, YY, c=my_color,marker=marker)
-    plt.title(text)
-    if index > (tn-ncols):
-        plt.xlabel('True Values')
-    if index%ncols == 1 or ncols==1:
-        plt.ylabel('Predictions')
-    p1 = max(XX) #max(max(YY), max(XX))
-    p2 = min(XX) #min(min(YY), min(XX))
-    plt.plot([p1, p2], [p1, p2], 'b-')
-    plt.xlim(p2, p1)
-    plt.ylim(p2, p1)
-    DIFF_ = abs(XX - YY)
-    # ax.plot([],[],' ',label=f"Max error = {max(DIFF_):.2f} eV \n {'MAE':>11} = {np.mean(DIFF_):.2f}±{np.std(DIFF_):.2f} eV")
-    plt.plot([],[],' ',label=f"Max error = {max(DIFF_):.2f} eV \nMAE = {np.mean(DIFF_):.2f}±{np.std(DIFF_):.2f} eV")
-    if ShowLegend: plt.legend(handlelength=0)
+
+def PlotStrainBandgap2Dplot(XX,YY,save=False, savepath='.', figname='EaxmpleBandgapStrain2dMap.png'):
+    fig, ax = plt.subplots(figsize=(8,6))
+    ax.set_xlabel('Strain (%)')
+    ax.set_ylabel('E$_{\mathrm{g}}$ (eV)')
+    ax.plot(XX, YY, 'o-',c='k')
+    ax.axvline(x=0,ls='--',color='k')
+    ax.xaxis.set_major_locator(MultipleLocator(2))
+    ax.xaxis.set_minor_locator(MultipleLocator(1))
+
+    ax.yaxis.set_minor_locator(MultipleLocator(0.1))
+    ax.tick_params(axis='both',which='major',length=10,width=2)
+    ax.tick_params(axis='both',which='minor',length=6,width=2)
     plt.tight_layout()
     if save:
         plt.savefig(savepath+'/'+figname,bbox_inches = 'tight',dpi=300)
         plt.close()
     else:
         plt.show()
-    return 
+    return fig, ax
+    
+def plot_test_results(XX, YY, text=None, my_color=None, tn=1, nrows=1, ncols=1, ShowLegend=True,
+                      index=1, save=False, savepath='.', figname='TruePrediction.png',marker=None,
+                      data_unit_label='eV',xlabel_text="True values",ylabel_txt="Predictions"):
+    fig = plt.figure(figsize=(8, 8))
+    ax = fig.add_subplot(nrows, ncols, index, aspect='equal')
+    plt.scatter(XX, YY, c=my_color,marker=marker)
+    plt.title(text)
+    if index > (tn-ncols):
+        plt.xlabel(f"{xlabel_text} ({data_unit_label})")
+    if index%ncols == 1 or ncols==1:
+        plt.ylabel(f"{ylabel_txt} ({data_unit_label})")
+    p1 = max(max(YY), max(XX)) #max(XX)
+    p2 = min(min(YY), min(XX)) #min(XX)
+    plt.plot([p1, p2], [p1, p2], 'k-')
+    plt.xlim(p2, p1)
+    plt.ylim(p2,p1)
+    # plt.ylim(min(min(YY), min(XX)), max(max(YY),max(XX)))
+    # DIFF_ = np.sqrt(np.sum((XX - YY)**2)/len(XX))
+    # ax.plot([],[],' ',label=f"Max error = {max(DIFF_):.2f} eV \n {'MAE':>11} = {np.mean(DIFF_):.2f}±{np.std(DIFF_):.2f} eV")
+    # plt.plot([],[],' ',label=f"RMSE = {DIFF_:.2f} eV")
+    # if ShowLegend: plt.legend(handlelength=0)
+    plt.gca().xaxis.set_major_locator(MultipleLocator(0.4))
+    plt.gca().yaxis.set_major_locator(MultipleLocator(0.4))
+    plt.gca().xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+    plt.gca().yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+    plt.gca().tick_params(axis='both',which='major',length=10,width=2)
+    plt.gca().tick_params(axis='both',which='minor',length=6,width=2)
+    plt.tight_layout()
+    if save:
+        plt.savefig(savepath+'/'+figname,bbox_inches = 'tight',dpi=300)
+        plt.close()
+    else:
+        plt.show()
+    return ax
     
 def PlotTruePredictionCorrelation(Y_test, Y_pred, ttext, nrows=3):
     nproperties = Y_test.shape[1]
@@ -96,16 +126,18 @@ def PlotTruePredictionCorrelation(Y_test, Y_pred, ttext, nrows=3):
         plot_test_results(Y_test[:,I], Y_pred[:,I], ttext[I],\
                           tn=nproperties, nrows=nrows, ncols=ncols, index=(I+1))
     
-def plot_err_dist(XX, YY, text, tn=1, nrows=1, ncols=1, index=1,save=False, savepath='.', figname='TruePredictErrorHist.png'):
+def plot_err_dist(XX, YY, text, tn=1, nrows=1, ncols=1, index=1,data_unit_label='eV',save=False, savepath='.', figname='TruePredictErrorHist.png'):
     # Check error distribution
     plt.subplot(nrows, ncols, index)
     plt.title(text)
     error = YY - XX
     plt.hist(error, bins=25)
+    plt.gca().tick_params(axis='both',which='major',length=10,width=2)
+    plt.gca().tick_params(axis='both',which='minor',length=6,width=2)
     if index > (tn-ncols):
-        plt.xlabel('Prediction Error')
+        plt.xlabel(f'Prediction error ({data_unit_label})')
     if index%ncols == 1:
-        plt.ylabel('Count')
+        plt.ylabel('Count (arb.)')
     if save:
         plt.savefig(savepath+'/'+figname,bbox_inches = 'tight',dpi=300)
         plt.close()
@@ -202,9 +234,9 @@ def AxisLabels(ax, textt, scale, fontsize=24):
         ax.text(I[0],I[1],0, textt[i], fontsize=fontsize)
     return ax
 
-def Plot3DBandgapTernary(X,Y,Z,c,textt=['a','b','c'], scale=1, 
-                         label_fontsize=16,cbarlabel_fontsize=16,
-                         ax=None, fig=None, ShowColorbar=True):   
+def Plot3DBandgapTernary(X,Y,Z,c,textt=['a','b','c'], scale=1, zaxis_label=None,
+                         label_fontsize=16,cbarlabel_fontsize=16,cbar_txt = 'Strain(%)',
+                         ax=None, fig=None, ShowColorbar=True,titletxt=None):   
     """
     This function plots the bandgap scatter plot in 3D.
 
@@ -239,21 +271,22 @@ def Plot3DBandgapTernary(X,Y,Z,c,textt=['a','b','c'], scale=1,
 
     """
     if ax is None:
-        fig = plt.figure()
+        fig = plt.figure(figsize=(12,10))
         ax = fig.add_subplot(111, projection='3d')
-    ax.set_zlabel('Strain(%)')
-    ax = HideLabels(ax)
-    #ax.set_axis_off()
-    ax = AxisLabels(ax, textt, scale=1, fontsize=label_fontsize)
+        ax.set_zlabel(zaxis_label)
+        ax = HideLabels(ax)
+        #ax.set_axis_off()
+        ax.set_title(titletxt)
+        ax = AxisLabels(ax, textt, scale=1, fontsize=label_fontsize)
     
     x,y = DataConversion(X,Y)
     x = x / scale
     y = y / scale 
     surf = ax.scatter(x,y,Z,c=c)
-
+    if fig is None: ShowColorbar=False
     if ShowColorbar:
-        cbar = fig.colorbar(surf, shrink=0.5, aspect=5)
-        cbar.ax.set_ylabel('E$_\mathrm{g}$', fontsize = cbarlabel_fontsize, weight="bold")
+        cbar = fig.colorbar(surf, shrink=0.5) #, aspect=5)
+        cbar.ax.set_ylabel(cbar_txt, fontsize = cbarlabel_fontsize)
     return fig, ax
     
 
@@ -366,7 +399,7 @@ def DrawAllContour(cnt,fname=None, titletext=None,
     tax.right_axis_label(axislabels[1], offset=0.13, color=axes_colors['r'], fontsize=fontsize)
     tax.bottom_axis_label(axislabels[2], offset=0.02, color=axes_colors['b'], fontsize=fontsize)
     
-    tax.ticks(axis='blr', linewidth=1, clockwise=False, multiple=10,
+    tax.ticks(axis='blr', linewidth=2, clockwise=False, multiple=10,
               axes_colors=axes_colors, offset=0.02, tick_formats="%d",
               fontsize=20)
     
@@ -375,20 +408,20 @@ def DrawAllContour(cnt,fname=None, titletext=None,
     for strain,contours in cnt.items():
         for contour in contours.allsegs:
             for seg in contour:
-                tax.plot(seg[:, 0:2], color=cmap(norm(strain)))
+                tax.plot(seg[:, 0:2], color=cmap(norm(strain)),antialiased=True)
         
     tax.get_axes().set_aspect(1)
-    ax.text(32,44,'D',fontsize=fontsize)
-    ax.text(75,8,'I',fontsize=fontsize)
+    ax.text(25,35,'DIRECT',fontsize=fontsize,rotation=56)
+    ax.text(65,3,'INDIRECT',fontsize=fontsize,rotation=45)
     
     cb = plt.colorbar(plt.cm.ScalarMappable(cmap=cmap, norm=norm),ax=ax,
-                        format='%.1f',shrink=0.9,anchor=(0.5,0.8), pad=0.03,location=cbarpos)
+                        format='%.1f',shrink=0.9,anchor=(0.5,0.8), pad=0.01,location=cbarpos)
     cb.set_label(label='Strain(%)',size=fontsize)
-    cb.ax.tick_params(labelsize=20)
+    cb.ax.tick_params(labelsize=20,length=8,width=2)
     tax._redraw_labels()
     #plt.tight_layout()
     if savefig:
-        plt.savefig(fname,format='png',bbox_inches = 'tight',dpi=300)
+        plt.savefig(fname,bbox_inches = 'tight',dpi=300)
         plt.close(figure)
     else:
         tax.show()
@@ -450,7 +483,7 @@ def DrawIndividualContourText(ax, contours, COMContourText, fontsize=20):
 
 def DrawSnapshot(dd, fname=None, titletext=None, BandGapNatureHeatmap=False, contours=None,
                  UseContoursText=False, ContoursText=None, savefig=False, 
-                 scale=1, 
+                 scale=1, titletext_loc='right',show_colorbar=True,
                  axislabels = ["A", "B", "C"],axiscolors=None,
                  axislabelcolors=None,COMContourText=['test'],
                  vmin=-1, vmax=1,cmap=plt.cm.get_cmap('viridis'),
@@ -530,7 +563,7 @@ def DrawSnapshot(dd, fname=None, titletext=None, BandGapNatureHeatmap=False, con
     tax.boundary(linewidth=2.0, axes_colors=None) 
     
     if titletext is not None:
-        tax.set_title(titletext, fontsize=24, loc='right')
+        tax.set_title(titletext, fontsize=24, loc=titletext_loc)
         #ax.text(100,55,titletext, fontsize=24,  rotation=270)
     tax.left_axis_label(axislabels[0], offset=0.12, color=axislabelcolors['l'], fontsize=fontsize)
     tax.right_axis_label(axislabels[1], offset=0.13, color=axislabelcolors['r'], fontsize=fontsize)
@@ -547,27 +580,31 @@ def DrawSnapshot(dd, fname=None, titletext=None, BandGapNatureHeatmap=False, con
     # tax.ticks(ticks=ticks, axis='blr', linewidth=1, clockwise=False,
     #           axes_colors={'b':'r','l':'b','r':'g'}, offset=0.02, tick_formats="%0.1f")
     
-    tax.ticks(axis='blr', linewidth=1, clockwise=False, multiple=10,
+    tax.ticks(axis='blr', linewidth=2, clockwise=False, multiple=10,
               axes_colors=axislabelcolors, offset=0.02, tick_formats="%d",
               fontsize=20)
     
     tax.get_axes().axis('off')
     tax.clear_matplotlib_ticks()
     if BandGapNatureHeatmap:
-        _, _ = tax.heatmap(dd, scale=scale, style="h", cmap=cmap, colorbar=False,)
+        _, cb = tax.heatmap(dd, scale=scale, style="h", cmap=cmap, colorbar=False,)
                            #vmin=0, vmax=1,)
         # tax.scatter([(1,1,1)], marker='s', color=cmap(0), label="Indirect")
         # tax.scatter([(1,1,1)], marker='s', color=cmap(11), label="Direct")
         # tax.legend(loc=1, fontsize=18)
+        if show_colorbar:
+            cb.set_label(label=cbarlabel, size=fontsize)
+            cb.ax.tick_params(labelsize=20,length=8,width=2)
     elif dd is not None:
         _,cb = tax.heatmap(dd, scale=scale, style="h", cmap=cmap, 
                     vmin=vmin, vmax=vmax, 
                     cb_kwargs={'format':'%.1f','shrink':0.9,'anchor':(0.6,0.8),
                                'location':cbarpos,
-                               'pad':0.03}, 
+                               'pad':0.01}, 
                     )
-        cb.set_label(label=cbarlabel, size=fontsize)
-        cb.ax.tick_params(labelsize=20)
+        if show_colorbar:
+            cb.set_label(label=cbarlabel, size=fontsize)
+            cb.ax.tick_params(labelsize=20,length=8,width=2)
         
     if contours is not None:
         if UseContoursText: 
@@ -586,13 +623,20 @@ def DrawSnapshot(dd, fname=None, titletext=None, BandGapNatureHeatmap=False, con
     tax.get_axes().set_aspect(1)
     tax._redraw_labels()
     
-    if DrawRawData:  
+    if DrawRawData and len(RawData)>0:  
         COlors = RawDataColor if (RawDataColor is not None) else 'k' 
         _,cb = tax.scatter(RawData, marker='s', colormap=cmap, cmap=cmap, vmax=vmax,
-                           vmin=vmin, c=COlors)
+                           vmin=vmin, c=COlors,colorbar=show_colorbar, 
+                           cb_kwargs={'format':'%.1f','shrink':0.9,'anchor':(0.6,0.8),
+                                                  'location':cbarpos,
+                                                  'pad':0.01})
+        if show_colorbar:
+            cb.set_label(label = cbarlabel, size=fontsize)
+            cb.ax.tick_params(labelsize=20,length=8,width=2)
+            cb.ax.set_xticks([0.25,0.75],['indirect','direct'])
     #plt.tight_layout()
     if savefig:
-        plt.savefig(fname+'.png',format='png',bbox_inches = 'tight',dpi=300)
+        plt.savefig(fname,bbox_inches = 'tight',dpi=300)
         plt.close(figure)
     else:
         tax.show()
@@ -702,7 +746,7 @@ def GenerateHeatmapSnapShots(StrainArray, features, pp, movdirname='',
         if generatetitle:
             tt = f"Strain = {StrainSnap:.1f} %"
         CNTtext = [ContoursText[JJ][StrainSnap] for JJ in range(HowManyCNTtext)]
-        _ = DrawSnapshot(dd, fname=movdirname+f'conf{i:03d}', titletext=tt, \
+        _ = DrawSnapshot(dd, fname=movdirname+f'conf{i:03d}.png', titletext=tt, \
                          BandGapNatureHeatmap=BandGapNatureHeatmap, savefig=savefig, scale=scale,
                          axislabels=axislabels,axiscolors=axiscolors,
                          axislabelcolors=axislabelcolors,COMContourText=COMContourText,
@@ -710,7 +754,58 @@ def GenerateHeatmapSnapShots(StrainArray, features, pp, movdirname='',
                          UseContoursText=UseContoursText, ContoursText=CNTtext,
                          fontsize=fontsize, cbarlabel=cbarlabel,cbarpos=cbarpos,
                          RawData=RawDataTmp,RawDataColor=RawDataTmp_color,DrawRawData=DrawRawData)
-
+            
+# def cube(i,pp,StrainArray,features,OnlyContour,DrawRawData,RawData,RawDataColorColumn,generatetitle,ContoursText,
+#          HowManyCNTtext,movdirname,BandGapNatureHeatmap,savefig,scale,axislabels,axiscolors,axislabelcolors,COMContourText,
+#          cmap,vmin,vmax,contours,UseContoursText,fontsize,cbarlabel,cbarpos,RawDataTmp_color,RawDataTmp):
+#     StrainSnap = StrainArray[i]
+#     print(f"* Snapshot: {i+1}/{len(StrainArray)}")
+#     ppp = pp[StrainSnap][features]
+#     dd = None if OnlyContour else generate_heatmap_data(ppp)
+#     if DrawRawData: 
+#         RawData_ = RawData[RawData['STRAIN']==StrainSnap]
+#         RawDataTmp = generate_scatter_data(RawData_[features[:3]])
+#         if RawDataColorColumn is not None: RawDataTmp_color = RawData_[RawDataColorColumn] 
+#     if generatetitle:
+#         tt = f"Strain = {StrainSnap:.1f} %"
+#     CNTtext = [ContoursText[JJ][StrainSnap] for JJ in range(HowManyCNTtext)]
+#     _ = DrawSnapshot(dd, fname=movdirname+f'conf{i:03d}.png', titletext=tt, \
+#                      BandGapNatureHeatmap=BandGapNatureHeatmap, savefig=savefig, scale=scale,
+#                      axislabels=axislabels,axiscolors=axiscolors,
+#                      axislabelcolors=axislabelcolors,COMContourText=COMContourText,
+#                      cmap=cmap, vmin=vmin, vmax=vmax,contours=[contours[StrainSnap]],
+#                      UseContoursText=UseContoursText, ContoursText=CNTtext,
+#                      fontsize=fontsize, cbarlabel=cbarlabel,cbarpos=cbarpos,
+#                      RawData=RawDataTmp,RawDataColor=RawDataTmp_color,DrawRawData=DrawRawData)
+# from multiprocessing import Pool    
+# def GenerateHeatmapSnapShots_multiprocessing(StrainArray, features, pp, movdirname='', 
+#                              tt=None, ZcolumnName='STRAIN',
+#                              generatetitle=True, BandGapNatureHeatmap=False,contours=None,
+#                              UseContoursText=False, ContoursText=None,
+#                              axislabels = ["A", "B", "C"],
+#                              axiscolors=None,axislabelcolors=None,COMContourText=['test'],
+#                              savefig=False, scale=100,cmap=plt.cm.get_cmap('viridis'),
+#                              vmin=-1, vmax=1, fontsize=20, cbarlabel=None,
+#                              cbarpos='right',OnlyContour=False,
+#                              RawData=None, RawDataColorColumn=None, DrawRawData=False):
+#     TotalSnapShot = len(StrainArray)
+#     RawDataTmp_color = None; RawDataTmp = None
+#     if OnlyContour: BandGapNatureHeatmap = False
+#     if RawData is None: DrawRawData=False
+    
+#     if contours is None: contours={i:None for i in StrainArray}
+#     if ContoursText is None: ContoursText=[{i:None for i in StrainArray}]
+    
+#     HowManyCNTtext = len(ContoursText)
+#     args = [(i,pp,StrainArray,features,OnlyContour,DrawRawData,RawData,RawDataColorColumn,generatetitle,ContoursText,
+#              HowManyCNTtext,movdirname,BandGapNatureHeatmap,savefig,scale,axislabels,axiscolors,axislabelcolors,COMContourText,
+#              cmap,vmin,vmax,contours,UseContoursText,fontsize,cbarlabel,cbarpos,RawDataTmp_color,RawDataTmp) for i in range(TotalSnapShot)]
+    
+    
+#     with Pool(processes=4) as pool:
+#         pool.starmap(cube, args)
+    
+  
 def GenerateHeatmapSnapShotsV2(ppp, strain, movdirname=None, tt=None, 
                                generatetitle=True,contours=None,
                                UseContoursText=False, ContoursText=None,
@@ -804,7 +899,7 @@ def GenerateHeatmapSnapShotsV2(ppp, strain, movdirname=None, tt=None,
                      RawData=RawData, RawDataColor=RawDataColor, DrawRawData=DrawRawData)
 
 
-def MakeEgStrainSnapShotMovie(images, movdirname=None, savefig = 0, repeatunit=5):
+def MakeEgStrainSnapShotMovie(images, movdirname=None, savefig = 0, repeatunit=1):
     fig = plt.figure(constrained_layout=True)
     ax = plt.subplot(1,1,1)
     ax.get_xaxis().set_visible(False)
@@ -867,69 +962,93 @@ def GetContours(x,y,h, TernaryConversion=False):
 def DrawRandomConfigurationPoints(dd, fname=None, titletext=None, ax=None,
                                   savefig=False, scale=1, OnlyContour=False,
                                   axislabels = ["A", "B", "C"],axiscolors=None,
-                                  axislabelcolors=None,
+                                  axislabelcolors=None,DrawGridLines=False,titletext_loc='right',
                                   vmin=-1, vmax=1,cmap=plt.cm.get_cmap('viridis'),
-                                  fontsize = 20,colorbar=True,
+                                  fontsize = 20,colorbar=True,cbarpos='right',
                                   colors='k',cbar_label_txt='Strain (%)',marker='s',
                                   ):
     # Dictionary of axes colors for bottom (b), left (l), right (r).
     if axislabelcolors is None: axislabelcolors={'b':'k','l':'k','r':'k'}
             
-    if ax is None: figure, ax = plt.subplots()
+    
+    # figure, ax = plt.subplots()
+    # tax = ternary.TernaryAxesSubplot(ax=ax, scale=scale)
+    # #figure, tax = ternary.figure(scale=scale)
+    # if (cbarpos == 'right') or (cbarpos == 'left'):
+    #     figure.set_size_inches(10, 8) 
+    # else:
+    #     figure.set_size_inches(10, 10)
+    
+    # tax.boundary(linewidth=2.0, axes_colors=None) 
+    
+    # if titletext is not None:
+    #     tax.set_title(titletext, fontsize=24, loc='right')
+    #     #ax.text(100,55,titletext, fontsize=24,  rotation=270)
+        
+        
+        
+    if ax is None: 
+        figure, ax = plt.subplots()
+        if (cbarpos == 'right') or (cbarpos == 'left'):
+            figure.set_size_inches(10, 8) 
+        else:
+            figure.set_size_inches(10, 10)
+        
     tax = ternary.TernaryAxesSubplot(ax=ax, scale=scale)
-    #figure, tax = ternary.figure(scale=scale)
-    figure.set_size_inches(10, 8)
+    # #figure, tax = ternary.figure(scale=scale)
+    # figure.set_size_inches(10, 8)
     
     tax.boundary(linewidth=2.0, axes_colors=None) 
     
     if titletext is not None:
-        tax.set_title(titletext, fontsize=24, loc='left')
+        tax.set_title(titletext, fontsize=24, pad=20)      
     tax.left_axis_label(axislabels[0], offset=0.12, color=axislabelcolors['l'], fontsize=fontsize)
-    tax.right_axis_label(axislabels[1], offset=0.12, color=axislabelcolors['r'], fontsize=fontsize)
-    tax.bottom_axis_label(axislabels[2], offset=0.01, color=axislabelcolors['b'], fontsize=fontsize)
-    
-    tax.ticks(axis='blr', linewidth=1, clockwise=False, multiple=10,
+    tax.right_axis_label(axislabels[1], offset=0.13, color=axislabelcolors['r'], fontsize=fontsize)
+    tax.bottom_axis_label(axislabels[2], offset=0.02, color=axislabelcolors['b'], fontsize=fontsize)
+        
+    tax.ticks(axis='blr', linewidth=2, clockwise=False, multiple=10,
               axes_colors=axislabelcolors, offset=0.015, tick_formats="%d",
               fontsize=20)
-    # tax.gridlines(multiple=10, linewidth=2,
-    #               horizontal_kwargs={'color': axislabelcolors['b']},
-    #               left_kwargs={'color': axislabelcolors['l']},
-    #               right_kwargs={'color': axislabelcolors['r']},
-    #               alpha=0.7)
+    if DrawGridLines:
+        tax.gridlines(multiple=10, linewidth=2,
+                      horizontal_kwargs={'color': axislabelcolors['b']},
+                      left_kwargs={'color': axislabelcolors['l']},
+                      right_kwargs={'color': axislabelcolors['r']},
+                      alpha=0.7)
     
     tax.get_axes().axis('off')
     tax.clear_matplotlib_ticks()
     
     sc,cb = tax.scatter(dd, marker=marker, colormap=cmap, colorbar=colorbar, vmax=vmax,
-                       vmin=vmin, c=colors, cmap=cmap)
+                       vmin=vmin, c=colors, cmap=cmap,
+                       cb_kwargs={'format':'%.1f','shrink':0.9,'anchor':(0.6,0.8),
+                                  'location':cbarpos,
+                                  'pad':0.01})
     if colorbar:
         cb.set_label(label = cbar_label_txt, size=fontsize)
-        cb.ax.tick_params(labelsize=20)
+        cb.ax.tick_params(labelsize=20,length=8,width=2)
     
     tax.get_axes().set_aspect(1)
     tax._redraw_labels()
     plt.tight_layout()
     if savefig:
-        plt.savefig(fname)
+        plt.savefig(fname,bbox_inches = 'tight',dpi=300)
         plt.close(figure)
     else:
         tax.show()
     return figure, ax 
 
 #%%
-def plot_true_predict_results(XX, YY, ax=None, my_color=None, save=False, savehist=False, savepath='.', marker=None, ShowLegend=True,
+def plot_true_predict_results(XX, YY, ax=None, my_color=None, save=False, CreateHist=False, savehist=False, savepath='.', marker=None, ShowLegend=True,
                               text=None, tn=1, nrows=1, ncols=1, index=1,figname='TruePrediction.png', fignameHist='TruePredictErrorHist.png'):
-    if ax:
-        plot_test_results(XX, YY, text=text, my_color=my_color, tn=tn, nrows=nrows, ncols=ncols,marker=marker, 
-                          index=index,save=save, savepath=savepath,figname=figname,ShowLegend=ShowLegend)
-        return None
-    else:
-        plt.figure()
-        plot_err_dist(XX, YY, text=text, tn=tn, nrows=nrows, ncols=ncols, index=index,save=savehist, savepath=savepath,figname=fignameHist)
-        plt.figure()
-        plot_test_results(XX, YY, text=text, my_color=my_color, tn=tn, nrows=nrows, ncols=ncols,marker=marker, 
-                          index=index,save=save, savepath=savepath,figname=figname,ShowLegend=ShowLegend)
-        return True
+    if ax is None:
+        if CreateHist:
+            plt.figure()
+            plot_err_dist(XX, YY, text=text, tn=tn, nrows=nrows, ncols=ncols, index=index,save=savehist, savepath=savepath,figname=fignameHist)
+        # plt.figure()
+        ax = plot_test_results(XX, YY, text=text, my_color=my_color, tn=tn, nrows=nrows, ncols=ncols,marker=marker, 
+                               index=index,save=save, savepath=savepath,figname=figname,ShowLegend=ShowLegend)
+        return ax
     
 def Plot3Ddecision_function(Xp, Yp, Zval, scale=100, 
                             TernaryConversion=True, hplane=False):
@@ -956,3 +1075,231 @@ def Plot3Ddecision_function(Xp, Yp, Zval, scale=100,
     ax.set_zlabel('Z Label')
     ax.set_xlim(0,scale)
     plt.show()
+    
+def PlotPostProcessingDataSetSizeV0(pp,save=False, savepath='.'):      
+    ProjectionDict = {'root_mean_squared_error':'RMSE (meV)','r2_score':'$\mathrm{R}^2$','mean_absolute_error':'MAE (meV)',\
+                      'max_error':'Max error (meV)','accuracy_score':'Accuracy','balanced_accuracy_score': 'Balanced accuracy'}
+    AllColumns = list(pp.columns)[1:]
+    
+    pp_mean = pp.groupby('dataset_size', as_index=False).mean(numeric_only=True) 
+    pp_std = pp.groupby('dataset_size', as_index=False).std(numeric_only=True) 
+    # print("\nCreating figures:")
+    for II in AllColumns:
+        print(f"\t{II}")
+        WhichMetric = ProjectionDict.get(II.split('_',1)[-1],None)
+        fig, ax = plt.subplots()
+        ax.set_xlabel('Training set size')   
+        ax.set_ylabel(WhichMetric)    
+        ax.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],linestyle='-',color='k')  
+        plt.tight_layout()
+        ax.xaxis.set_minor_locator(MultipleLocator(100))
+        ax.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+        if save:
+            plt.savefig(savepath+'/'+II+'.png',bbox_inches = 'tight',dpi=300)
+            plt.close()
+        else:
+            plt.show()
+    return ax
+
+def PlotPostProcessingDataSetSize(pp,save=False, savepath='.',ProjectionDict=None): 
+    if ProjectionDict is None:
+        ProjectionDict = {'set1':{'root_mean_squared_error':'RMSE (meV)','r2_score':'$\mathrm{R}^2$'},'set2':{'mean_absolute_error':'MAE (meV)'},\
+                          'set3':{'max_error':'Max error (meV)'},'set4':{'accuracy_score':'Accuracy score','balanced_accuracy_score': 'Balanced accuracy score'},\
+                              'set5':{'accuracy_score':'Accuracy score'},'set6':{'r2_score':'$\mathrm{R}^2$'},'set7':{'balanced_accuracy_score': 'Balanced accuracy score'},
+                              'set8':{'root_mean_squared_error':'RMSE (meV)'}}
+    elif isinstance(ProjectionDict,dict):
+        pass
+    else:
+        print("ProjectionDict must be a dictionary.")
+        
+    AllColumns = list(pp.columns)[1:]
+    pp_mean = pp.groupby('dataset_size', as_index=False).mean(numeric_only=True) 
+    pp_std = pp.groupby('dataset_size', as_index=False).std(numeric_only=True) 
+    # print("\nCreating figures:")
+    for LL in ['out-of-sample','all-sample']:
+        for whichset, I in ProjectionDict.items():
+            WhichMetric = list(I.keys())
+            II = f'{LL}_{WhichMetric[0]}'
+            if II in AllColumns:
+                fig, ax = plt.subplots()
+                ax.set_xlabel('Training set size')
+                ax.set_ylabel(ProjectionDict[whichset][WhichMetric[0]])    
+                ax.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],linestyle='-',color='k')
+                if WhichMetric[0] in ['root_mean_squared_error','mean_absolute_error','max_error']:
+                    PrecissionStr = '%.1f' 
+                    ax.yaxis.set_minor_locator(MultipleLocator(5))
+                else:
+                    PrecissionStr = '%.2f'
+                    if WhichMetric[0] == 'r2_score': 
+                        PrecissionStr = '%.3f'
+                    else:
+                        ax.yaxis.set_major_locator(MultipleLocator(0.02))
+                        ax.yaxis.set_minor_locator(MultipleLocator(0.01))
+                    
+                    ax.yaxis.set_major_formatter(FormatStrFormatter(PrecissionStr))
+                if len(WhichMetric) == 2:
+                    II = f'{LL}_{WhichMetric[1]}'
+                    if II in AllColumns:
+                        ax2 = ax.twinx()
+                        ax2.set_ylabel(ProjectionDict[whichset][WhichMetric[1]])  
+                        ax2.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],linestyle='-',color='tab:blue')  
+                        ax2.tick_params(axis='y', labelcolor='tab:blue')
+                        if WhichMetric[1] in ['root_mean_squared_error','mean_absolute_error','max_error']:
+                            PrecissionStr = '%.1f' 
+                        else:
+                            PrecissionStr = '%.2f'
+                            if WhichMetric[1] == 'r2_score': 
+                                PrecissionStr = '%.3f'
+                            else:
+                                ax2.yaxis.set_major_locator(MultipleLocator(0.02))
+                                ax2.yaxis.set_minor_locator(MultipleLocator(0.01))
+                        ax2.yaxis.set_major_formatter(FormatStrFormatter(PrecissionStr))
+                        ax2.tick_params(axis='both',which='major',length=10,width=2)
+                        ax2.tick_params(axis='both',which='minor',length=6,width=2)
+                ax.xaxis.set_minor_locator(MultipleLocator(100))
+                ax.tick_params(axis='both',which='major',length=10,width=2)
+                ax.tick_params(axis='both',which='minor',length=6,width=2)
+                if save:
+                    SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}.png"
+                    plt.savefig(SaveFileName,bbox_inches = 'tight',dpi=300)
+                    plt.close()
+                else:
+                    plt.show()
+    return 
+
+def PlotPostProcessingDataSetSize_special(pp,save=False, ax=None, fig=None, savepath='.',ProjectionDict=None, ax_y_precision=None,ax_yminortick_multi=5,ax_plot_color='k'): 
+    if ProjectionDict is None:
+        ProjectionDict = {'set1':{'root_mean_squared_error':'RMSE (meV)','accuracy_score':'Accuracy score'}}
+    elif isinstance(ProjectionDict,dict):
+        pass
+    else:
+        print("ProjectionDict must be a dictionary.")
+        
+    AllColumns = list(pp.columns)[1:]
+    pp_mean = pp.groupby('dataset_size', as_index=False).mean(numeric_only=True) 
+    pp_std = pp.groupby('dataset_size', as_index=False).std(numeric_only=True) 
+    # print("\nCreating figures:")
+    for LL in ['out-of-sample']:
+        for whichset, I in ProjectionDict.items():
+            WhichMetric = list(I.keys())
+            II = f'{LL}_{WhichMetric[0]}'
+            if II in AllColumns:
+                if ax is None:
+                    fig, ax = plt.subplots()
+                ax.set_xlabel('Training set size')
+                ax.set_ylabel(ProjectionDict[whichset][WhichMetric[0]])    
+                ax.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],linestyle='-',color=ax_plot_color)
+                # PrecissionStr = '%.1f' if WhichMetric[0] in ['root_mean_squared_error','mean_absolute_error','max_error'] else '%.3f'
+                if ax_y_precision is not None and isinstance(ax_y_precision,str):
+                    ax.yaxis.set_major_formatter(FormatStrFormatter(ax_y_precision))
+                if len(WhichMetric) == 2:
+                    II = f'{LL}_{WhichMetric[1]}'
+                    if II in AllColumns:
+                        ax2 = ax.twinx()
+                        ax2.set_ylabel(ProjectionDict[whichset][WhichMetric[1]])  
+                        ax2.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],linestyle='-',color='tab:blue')  
+                        ax2.tick_params(axis='y', labelcolor='tab:blue')
+                        # ax2.tick_params(axis='both', length=2,width=3)
+                        PrecissionStr = '%.1f' if WhichMetric[1] in ['root_mean_squared_error','mean_absolute_error','max_error'] else '%.2f'
+                        ax2.yaxis.set_major_formatter(FormatStrFormatter(PrecissionStr))
+                        ax2.yaxis.set_minor_locator(MultipleLocator(0.02))
+                        ax2.yaxis.set_major_locator(MultipleLocator(0.04))
+                        ax2.tick_params(axis='both',which='major',length=10,width=2)
+                        ax2.tick_params(axis='both',which='minor',length=6,width=2)
+                ax.xaxis.set_minor_locator(MultipleLocator(100))
+                ax.yaxis.set_minor_locator(MultipleLocator(ax_yminortick_multi))
+                # ax.yaxis.set_major_locator(MultipleLocator(10))
+                ax.tick_params(axis='both',which='major',length=10,width=2)
+                ax.tick_params(axis='both',which='minor',length=6,width=2)
+                if save:
+                    SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}.png"
+                    plt.savefig(SaveFileName,bbox_inches = 'tight',dpi=300)
+                    plt.close()
+                else:
+                    pass
+                    #plt.show()
+    return fig, ax
+
+class OOMFormatter(ScalarFormatter):
+    def __init__(self, order=0, fformat="%1.1f", offset=True, mathText=True):
+        self.oom = order
+        self.fformat = fformat
+        ScalarFormatter.__init__(self,useOffset=offset,useMathText=mathText)
+    def _set_order_of_magnitude(self):
+        self.orderOfMagnitude = self.oom
+    def _set_format(self, vmin=None, vmax=None):
+        self.format = self.fformat
+        if self._useMathText:
+            self.format = r'$\mathdefault{%s}$' % self.format
+
+def PlotPostProcessingDataSetSizeLogLog(pp,save=False, savepath='.'):      
+    ProjectionDict = {'set1':{'root_mean_squared_error':'RMSE (meV)'},'set2':{'mean_absolute_error':'MAE (meV)'},\
+                          'set3':{'accuracy_score':'Accuracy-score'}}
+    # ProjectionDict = {'set1':{'root_mean_squared_error':'RMSE (meV)'}}
+    AllColumns = list(pp.columns)[1:]
+    pp_mean = pp.groupby('dataset_size', as_index=False).mean(numeric_only=True) 
+    pp_std = pp.groupby('dataset_size', as_index=False).std(numeric_only=True) 
+    # print("\nCreating figures:")
+    for LL in ['out-of-sample','all-sample']:
+        for whichset, I in ProjectionDict.items():
+            WhichMetric = list(I.keys())
+            II = f'{LL}_{WhichMetric[0]}'
+            if II in AllColumns:
+                fig, ax = plt.subplots()
+                ax.set_xlabel('Training set size')
+                ax.set_ylabel(ProjectionDict[whichset][WhichMetric[0]])  
+                ax.set_xscale('log', nonpositive='clip')
+                ax.set_yscale('log', nonpositive='clip')
+                ax.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],linestyle='-',color='k')
+                ax.tick_params(axis='both',which='major',length=10,width=2)
+                ax.tick_params(axis='both',which='minor',length=6,width=2)
+                # y_major = LogLocator(base = 10.0, numticks = 100)
+                # ax.yaxis.set_minor_locator(y_major)
+                ax.yaxis.set_minor_formatter(LogFormatterSciNotation(minor_thresholds=(1,10)))
+                # ax.yaxis.set_minor_formatter(LogFormatter(minor_thresholds=(1,10)))
+                if len(WhichMetric) == 2:
+                    II = f'{LL}_{WhichMetric[1]}'
+                    if II in AllColumns:
+                        ax2 = ax.twinx()
+                        ax2.set_ylabel(ProjectionDict[whichset][WhichMetric[1]])  
+                        ax2.set_xscale('log', nonpositive='clip')
+                        ax2.set_yscale('log', nonpositive='clip')
+                        ax2.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],linestyle='-',color='tab:blue')  
+                        ax2.tick_params(axis='y', which='both', labelcolor='tab:blue')
+                        ax2.tick_params(axis='both',which='major',length=10,width=2)
+                        ax2.tick_params(axis='both',which='minor',length=6,width=2)
+                if save:
+                    SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}_LogLog.png"
+                    print(f'\t{SaveFileName}')
+                    plt.savefig(SaveFileName,bbox_inches = 'tight',dpi=300)
+                    plt.close()
+                else:
+                    plt.show()
+    return 
+
+def PlotPostProcessingDataSetSizeLogLog_v2(pp,save=False, savepath='.'):      
+    ProjectionDict = {'set1':{'root_mean_squared_error':'log$_{10}$(RMSE) (meV)'}}
+    pp_mean = pp.groupby('dataset_size', as_index=False).mean(numeric_only=True) 
+    pp_std = pp.groupby('dataset_size', as_index=False).std(numeric_only=True) 
+    AllColumns = list(pp.columns)[1:]
+    # print("\nCreating figures:")
+    for LL in ['out-of-sample','all-sample']:
+        for whichset, I in ProjectionDict.items():
+            WhichMetric = list(I.keys())
+            II = f'{LL}_{WhichMetric[0]}'
+            if II in AllColumns:
+                fig, ax = plt.subplots()
+                ax.set_xlabel('log$_{10}$(Training set size)')
+                ax.set_ylabel(ProjectionDict[whichset][WhichMetric[0]])  
+                ax.errorbar(np.log10(pp_mean['dataset_size']),np.log10(pp_mean[II]),yerr=0,linestyle='-',color='k')
+                ax.tick_params(axis='both',which='major',length=10,width=2)
+                ax.tick_params(axis='both',which='minor',length=6,width=2)
+                ax.xaxis.set_minor_locator(MultipleLocator(0.1))
+            if save:
+                SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}_LogLog_v2.png"
+                print(f'\t{SaveFileName}')
+                plt.savefig(SaveFileName,bbox_inches = 'tight',dpi=300)
+                plt.close()
+            else:
+                plt.show()
+    return 
