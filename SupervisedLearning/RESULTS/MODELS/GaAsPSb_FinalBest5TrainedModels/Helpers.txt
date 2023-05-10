@@ -1,0 +1,11 @@
+Description: This script predict the bandgap of GaAsPSb with the trained machine learning model.
+
+Programming language: python 3.9
+Required packages:
+	glob
+	os
+	numpy
+	pickle
+	pandas
+
+Run command: python PredictBandgap.py

@@ -14,10 +14,13 @@ from mpl_toolkits.mplot3d import Axes3D
 import ternary
 from matplotlib import animation
 from matplotlib.colors import Normalize
+import scipy.interpolate as inpr
 
-import tensorflow_docs as tfdocs
-import tensorflow_docs.modeling
-import tensorflow_docs.plots
+# import tensorflow_docs as tfdocs
+# import tensorflow_docs.modeling
+# import tensorflow_docs.plots
+
+# from scipy.signal import savgol_filter
 
 #%%
 # params = {'legend.fontsize': 18,
@@ -138,6 +141,33 @@ def plot_err_dist(XX, YY, text, tn=1, nrows=1, ncols=1, index=1,data_unit_label=
         plt.xlabel(f'Prediction error ({data_unit_label})')
     if index%ncols == 1:
         plt.ylabel('Count (arb.)')
+    if save:
+        plt.savefig(savepath+'/'+figname,bbox_inches = 'tight',dpi=300)
+        plt.close()
+    else:
+        plt.show()
+    return 
+
+def PlotPredictionStdFullSpace(X, text=None, nbins=10, data_unit_label=' (eV)',save=False, savepath='.', figname='PredictAccuracyHistFullSpace.png',
+                               xlabel='Prediction STD',PlotLogScale=True,y_minor_locator=1e5,x_major_locator=10):
+    fig, ax = plt.subplots()
+    ax.hist(X, bins=nbins, lw=1) #, ec="yellow", fc="green", alpha=0.5)
+    ax.set_xlabel(f'{xlabel}{data_unit_label}')
+    ax.set_ylabel('Count (arb.)')
+    ax.set_title(None)
+    ax.tick_params(axis='both',which='major',length=10,width=2)
+    ax.tick_params(axis='both',which='minor',length=6,width=2)
+    if PlotLogScale: 
+        ax.set_yscale('log')
+    else:
+        formatter = ScalarFormatter(useMathText=True)
+        formatter.set_powerlimits((-3,2))
+        ax.yaxis.set_major_formatter(formatter)
+        # ax.yaxis.set_minor_locator(MultipleLocator(0.25*1e4))
+        ax.yaxis.set_minor_locator(MultipleLocator(y_minor_locator))
+
+    if x_major_locator is not None: ax.xaxis.set_major_locator(MultipleLocator(x_major_locator))
+    
     if save:
         plt.savefig(savepath+'/'+figname,bbox_inches = 'tight',dpi=300)
         plt.close()
@@ -380,7 +410,8 @@ def DrawAllContour(cnt,fname=None, titletext=None,
                    axislabels = ["A", "B", "C"],
                    savefig=False, scale=1, vmin=-1, vmax=1,
                    cmap=plt.cm.get_cmap('viridis'),
-                   fontsize = 20, cbarpos = 'right'):
+                   fontsize = 20, cbarpos = 'right',
+                   ApplySmoothen=False):
     axes_colors = {'b':'k','l':'k','r':'k'}
     #figure, tax = ternary.figure(scale=scale)
     figure, ax = plt.subplots()
@@ -408,7 +439,24 @@ def DrawAllContour(cnt,fname=None, titletext=None,
     for strain,contours in cnt.items():
         for contour in contours.allsegs:
             for seg in contour:
-                tax.plot(seg[:, 0:2], color=cmap(norm(strain)),antialiased=True)
+                if ApplySmoothen:
+                    # ternaryax.plot(seg[:, 0:2], marker='.',color='k') # original data
+                    try:
+                        # x = seg[:, 0]; y = seg[:, 1]
+                        # # get the cumulative distance along the contour
+                        # dist = np.sqrt((x[:-1] - x[1:])**2 + (y[:-1] - y[1:])**2)
+                        # dist_along = np.concatenate(([0], dist.cumsum()))
+                        # # build a spline representation of the contour
+                        # spline, u = inpr.splprep([x, y], u=dist_along, s=5)
+                        spline, u = inpr.splprep([seg[:, 0], seg[:, 1]], s=5)
+                        interp_x, interp_y = inpr.splev(u, spline)
+                        tax.plot(np.stack((interp_x, interp_y),axis=-1), ls='-',color=cmap(norm(strain)),antialiased=True)
+                    except:
+                        pass
+                else:
+                    tax.plot(seg[:, 0:2], color=cmap(norm(strain)),antialiased=True)
+                    
+                # tax.plot(seg[:, 0:2], color=cmap(norm(strain)),antialiased=True)
         
     tax.get_axes().set_aspect(1)
     ax.text(25,35,'DIRECT',fontsize=fontsize,rotation=56)
@@ -456,20 +504,50 @@ def center_of_mass(X):
     cy = (((y[:-1] + y[1:])*g).sum())*fact
     return DataConversion(cx, cy)
 
-def DrawIndividualContour_and_Text(ternaryax, ax, contours, COMContourText, fontsize=20):
+def DrawIndividualContour_and_Text(ternaryax, ax, contours, COMContourText, fontsize=20,ApplySmoothen=False):
     for contour in contours.allsegs:
         for seg in contour:
-            ternaryax.plot(seg[:, 0:2], color='k')
+            if ApplySmoothen:
+                # ternaryax.plot(seg[:, 0:2], marker='.',color='k') # original data
+                try:
+                    # x = seg[:, 0]; y = seg[:, 1]
+                    # # get the cumulative distance along the contour
+                    # dist = np.sqrt((x[:-1] - x[1:])**2 + (y[:-1] - y[1:])**2)
+                    # dist_along = np.concatenate(([0], dist.cumsum()))
+                    # # build a spline representation of the contour
+                    # spline, u = inpr.splprep([x, y], u=dist_along, s=5)
+                    spline, u = inpr.splprep([seg[:, 0], seg[:, 1]], s=5)
+                    interp_x, interp_y = inpr.splev(u, spline)
+                    ternaryax.plot(np.stack((interp_x, interp_y),axis=-1), ls='-',color='k')
+                except:
+                    pass
+            else:
+                ternaryax.plot(seg[:, 0:2], color='k')
             COMtext = center_of_mass(seg[:, 0:2])
             ax.text(COMtext[0],COMtext[1],COMContourText,
                     ha="center", va="center",
                     fontsize=fontsize,color='k')
     return ternaryax, ax
 
-def DrawIndividualContour(ternaryax, contours):
+def DrawIndividualContour(ternaryax, contours, ApplySmoothen=False,color='k', ShowOriginal=False):
     for contour in contours.allsegs:
-        for seg in contour:
-            ternaryax.plot(seg[:, 0:2], color='k')
+        for seg in contour:  
+            if ApplySmoothen:
+                if ShowOriginal: ternaryax.plot(seg[:, 0:2], marker='.',color='red') # original data
+                try:
+                    # x = seg[:, 0]; y = seg[:, 1]
+                    # # get the cumulative distance along the contour
+                    # dist = np.sqrt((x[:-1] - x[1:])**2 + (y[:-1] - y[1:])**2)
+                    # dist_along = np.concatenate(([0], dist.cumsum()))
+                    # # build a spline representation of the contour
+                    # spline, u = inpr.splprep([x, y], u=dist_along, s=5)
+                    spline, u = inpr.splprep([seg[:, 0], seg[:, 1]], s=5)
+                    interp_x, interp_y = inpr.splev(u, spline)
+                    ternaryax.plot(np.stack((interp_x, interp_y),axis=-1), ls='-',color='k')
+                except:
+                    pass
+            else:
+                ternaryax.plot(seg[:, 0:2], color=color)
     return ternaryax
             
 def DrawIndividualContourText(ax, contours, COMContourText, fontsize=20):
@@ -488,7 +566,8 @@ def DrawSnapshot(dd, fname=None, titletext=None, BandGapNatureHeatmap=False, con
                  axislabelcolors=None,COMContourText=['test'],
                  vmin=-1, vmax=1,cmap=plt.cm.get_cmap('viridis'),
                  fontsize = 20, cbarlabel=None,cbarpos='right',
-                 RawData=None, RawDataColor=None, DrawRawData=False):
+                 RawData=None, RawDataColor=None, DrawRawData=False,
+                 ApplySmoothenCountour=False,ShowOriginalContourAndSmoothen=False):
     """
     This function draw the bandgap(nature) heatmap and contours.
 
@@ -587,7 +666,10 @@ def DrawSnapshot(dd, fname=None, titletext=None, BandGapNatureHeatmap=False, con
     tax.get_axes().axis('off')
     tax.clear_matplotlib_ticks()
     if BandGapNatureHeatmap:
-        _, cb = tax.heatmap(dd, scale=scale, style="h", cmap=cmap, colorbar=False,)
+        _, cb = tax.heatmap(dd, scale=scale, style="h", cmap=cmap, colorbar=show_colorbar,
+                            cb_kwargs={'format':'%.1f','shrink':0.9,'anchor':(0.6,0.8),
+                                                   'location':cbarpos,
+                                                   'pad':0.01})
                            #vmin=0, vmax=1,)
         # tax.scatter([(1,1,1)], marker='s', color=cmap(0), label="Indirect")
         # tax.scatter([(1,1,1)], marker='s', color=cmap(11), label="Direct")
@@ -595,6 +677,7 @@ def DrawSnapshot(dd, fname=None, titletext=None, BandGapNatureHeatmap=False, con
         if show_colorbar:
             cb.set_label(label=cbarlabel, size=fontsize)
             cb.ax.tick_params(labelsize=20,length=8,width=2)
+            cb.ax.set_xticks([0.25,0.75],['indirect','direct'])
     elif dd is not None:
         _,cb = tax.heatmap(dd, scale=scale, style="h", cmap=cmap, 
                     vmin=vmin, vmax=vmax, 
@@ -611,10 +694,11 @@ def DrawSnapshot(dd, fname=None, titletext=None, BandGapNatureHeatmap=False, con
             for i, contourss in enumerate(contours):
                 tax, ax = DrawIndividualContour_and_Text(tax, ax, contourss, 
                                                           COMContourText[i], 
-                                                          fontsize=fontsize)
+                                                          fontsize=fontsize,
+                                                          ApplySmoothen=ApplySmoothenCountour)
         else:
             for i, contourss in enumerate(contours):
-                tax = DrawIndividualContour(tax, contourss)
+                tax = DrawIndividualContour(tax, contourss,ApplySmoothen=ApplySmoothenCountour,ShowOriginal=ShowOriginalContourAndSmoothen)
             if all(ContoursText):
                 for i, contourss in enumerate(ContoursText):
                     ax = DrawIndividualContourText(ax, contourss, 
@@ -623,13 +707,20 @@ def DrawSnapshot(dd, fname=None, titletext=None, BandGapNatureHeatmap=False, con
     tax.get_axes().set_aspect(1)
     tax._redraw_labels()
     
-    if DrawRawData and len(RawData)>0:  
-        COlors = RawDataColor if (RawDataColor is not None) else 'k' 
-        _,cb = tax.scatter(RawData, marker='s', colormap=cmap, cmap=cmap, vmax=vmax,
-                           vmin=vmin, c=COlors,colorbar=show_colorbar, 
-                           cb_kwargs={'format':'%.1f','shrink':0.9,'anchor':(0.6,0.8),
-                                                  'location':cbarpos,
-                                                  'pad':0.01})
+    if DrawRawData:  
+        if len(RawData)>0:
+            COlors = RawDataColor if (RawDataColor is not None) else 'k' 
+            _,cb = tax.scatter(RawData, marker='s', colormap=cmap, cmap=cmap, vmax=vmax,
+                               vmin=vmin, c=COlors,colorbar=show_colorbar, 
+                               cb_kwargs={'format':'%.1f','shrink':0.9,'anchor':(0.6,0.8),
+                                                      'location':cbarpos,
+                                                      'pad':0.01})
+        else:
+            _,cb = tax.scatter([(100,100),(100,100)], colormap=cmap, cmap=cmap, vmax=1,
+                               vmin=0,colorbar=show_colorbar, 
+                               cb_kwargs={'format':'%.1f','shrink':0.9,'anchor':(0.6,0.8),
+                                                      'location':cbarpos,
+                                                      'pad':0.01})
         if show_colorbar:
             cb.set_label(label = cbarlabel, size=fontsize)
             cb.ax.tick_params(labelsize=20,length=8,width=2)
@@ -650,8 +741,9 @@ def GenerateHeatmapSnapShots(StrainArray, features, pp, movdirname='',
                              axiscolors=None,axislabelcolors=None,COMContourText=['test'],
                              savefig=False, scale=100,cmap=plt.cm.get_cmap('viridis'),
                              vmin=-1, vmax=1, fontsize=20, cbarlabel=None,
-                             cbarpos='right',OnlyContour=False,
-                             RawData=None, RawDataColorColumn=None, DrawRawData=False):
+                             cbarpos='right',OnlyContour=False,ShowColorbar=True,
+                             RawData=None, RawDataColorColumn=None, DrawRawData=False,
+                             BsplineSmoothenCountour=False):
     """
     This function plots the ternary bandgap(nature) heatmap and contours.
 
@@ -752,8 +844,9 @@ def GenerateHeatmapSnapShots(StrainArray, features, pp, movdirname='',
                          axislabelcolors=axislabelcolors,COMContourText=COMContourText,
                          cmap=cmap, vmin=vmin, vmax=vmax,contours=[contours[StrainSnap]],
                          UseContoursText=UseContoursText, ContoursText=CNTtext,
-                         fontsize=fontsize, cbarlabel=cbarlabel,cbarpos=cbarpos,
-                         RawData=RawDataTmp,RawDataColor=RawDataTmp_color,DrawRawData=DrawRawData)
+                         fontsize=fontsize, cbarlabel=cbarlabel,cbarpos=cbarpos,show_colorbar=ShowColorbar,
+                         RawData=RawDataTmp,RawDataColor=RawDataTmp_color,DrawRawData=DrawRawData,
+                         ApplySmoothenCountour=BsplineSmoothenCountour)
             
 # def cube(i,pp,StrainArray,features,OnlyContour,DrawRawData,RawData,RawDataColorColumn,generatetitle,ContoursText,
 #          HowManyCNTtext,movdirname,BandGapNatureHeatmap,savefig,scale,axislabels,axiscolors,axislabelcolors,COMContourText,
@@ -1107,6 +1200,10 @@ def PlotPostProcessingDataSetSize(pp,save=False, savepath='.',ProjectionDict=Non
                           'set3':{'max_error':'Max error (meV)'},'set4':{'accuracy_score':'Accuracy score','balanced_accuracy_score': 'Balanced accuracy score'},\
                               'set5':{'accuracy_score':'Accuracy score'},'set6':{'r2_score':'$\mathrm{R}^2$'},'set7':{'balanced_accuracy_score': 'Balanced accuracy score'},
                               'set8':{'root_mean_squared_error':'RMSE (meV)'}}
+        # ProjectionDict = {'set1':{'root_mean_squared_error':'RMSE (meV)'},'set2':{'mean_absolute_error':'MAE (meV)'},\
+        #                   'set3':{'max_error':'Max error (meV)'},\
+        #                       'set5':{'accuracy_score':'Accuracy score'},'set6':{'r2_score':'$\mathrm{R}^2$'},'set7':{'balanced_accuracy_score': 'Balanced accuracy score'},
+        #                       }
     elif isinstance(ProjectionDict,dict):
         pass
     else:
@@ -1124,7 +1221,7 @@ def PlotPostProcessingDataSetSize(pp,save=False, savepath='.',ProjectionDict=Non
                 fig, ax = plt.subplots()
                 ax.set_xlabel('Training set size')
                 ax.set_ylabel(ProjectionDict[whichset][WhichMetric[0]])    
-                ax.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],linestyle='-',color='k')
+                ax.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],marker='o',linestyle='-',color='k')
                 if WhichMetric[0] in ['root_mean_squared_error','mean_absolute_error','max_error']:
                     PrecissionStr = '%.1f' 
                     ax.yaxis.set_minor_locator(MultipleLocator(5))
@@ -1142,7 +1239,7 @@ def PlotPostProcessingDataSetSize(pp,save=False, savepath='.',ProjectionDict=Non
                     if II in AllColumns:
                         ax2 = ax.twinx()
                         ax2.set_ylabel(ProjectionDict[whichset][WhichMetric[1]])  
-                        ax2.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],linestyle='-',color='tab:blue')  
+                        ax2.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],marker='o',linestyle='-',color='tab:blue')  
                         ax2.tick_params(axis='y', labelcolor='tab:blue')
                         if WhichMetric[1] in ['root_mean_squared_error','mean_absolute_error','max_error']:
                             PrecissionStr = '%.1f' 
@@ -1161,6 +1258,7 @@ def PlotPostProcessingDataSetSize(pp,save=False, savepath='.',ProjectionDict=Non
                 ax.tick_params(axis='both',which='minor',length=6,width=2)
                 if save:
                     SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}.png"
+                    # SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}.eps"
                     plt.savefig(SaveFileName,bbox_inches = 'tight',dpi=300)
                     plt.close()
                 else:
@@ -1188,7 +1286,7 @@ def PlotPostProcessingDataSetSize_special(pp,save=False, ax=None, fig=None, save
                     fig, ax = plt.subplots()
                 ax.set_xlabel('Training set size')
                 ax.set_ylabel(ProjectionDict[whichset][WhichMetric[0]])    
-                ax.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],linestyle='-',color=ax_plot_color)
+                ax.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],marker='o',linestyle='-',color=ax_plot_color)
                 # PrecissionStr = '%.1f' if WhichMetric[0] in ['root_mean_squared_error','mean_absolute_error','max_error'] else '%.3f'
                 if ax_y_precision is not None and isinstance(ax_y_precision,str):
                     ax.yaxis.set_major_formatter(FormatStrFormatter(ax_y_precision))
@@ -1197,7 +1295,7 @@ def PlotPostProcessingDataSetSize_special(pp,save=False, ax=None, fig=None, save
                     if II in AllColumns:
                         ax2 = ax.twinx()
                         ax2.set_ylabel(ProjectionDict[whichset][WhichMetric[1]])  
-                        ax2.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],linestyle='-',color='tab:blue')  
+                        ax2.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],marker='o',linestyle='-',color='tab:blue')  
                         ax2.tick_params(axis='y', labelcolor='tab:blue')
                         # ax2.tick_params(axis='both', length=2,width=3)
                         PrecissionStr = '%.1f' if WhichMetric[1] in ['root_mean_squared_error','mean_absolute_error','max_error'] else '%.2f'
@@ -1250,12 +1348,14 @@ def PlotPostProcessingDataSetSizeLogLog(pp,save=False, savepath='.'):
                 ax.set_ylabel(ProjectionDict[whichset][WhichMetric[0]])  
                 ax.set_xscale('log', nonpositive='clip')
                 ax.set_yscale('log', nonpositive='clip')
-                ax.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],linestyle='-',color='k')
+                ax.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],marker='o',linestyle='-',color='k')
                 ax.tick_params(axis='both',which='major',length=10,width=2)
                 ax.tick_params(axis='both',which='minor',length=6,width=2)
                 # y_major = LogLocator(base = 10.0, numticks = 100)
                 # ax.yaxis.set_minor_locator(y_major)
-                ax.yaxis.set_minor_formatter(LogFormatterSciNotation(minor_thresholds=(1,10)))
+                # ax.yaxis.set_minor_formatter(LogFormatterSciNotation(minor_thresholds=(1,10)))
+                ax.yaxis.set_minor_formatter(FormatStrFormatter('%.d'))
+
                 # ax.yaxis.set_minor_formatter(LogFormatter(minor_thresholds=(1,10)))
                 if len(WhichMetric) == 2:
                     II = f'{LL}_{WhichMetric[1]}'
@@ -1264,12 +1364,13 @@ def PlotPostProcessingDataSetSizeLogLog(pp,save=False, savepath='.'):
                         ax2.set_ylabel(ProjectionDict[whichset][WhichMetric[1]])  
                         ax2.set_xscale('log', nonpositive='clip')
                         ax2.set_yscale('log', nonpositive='clip')
-                        ax2.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],linestyle='-',color='tab:blue')  
+                        ax2.errorbar(pp_mean['dataset_size'],pp_mean[II],yerr=pp_std[II],marker='o',linestyle='-',color='tab:blue')  
                         ax2.tick_params(axis='y', which='both', labelcolor='tab:blue')
                         ax2.tick_params(axis='both',which='major',length=10,width=2)
                         ax2.tick_params(axis='both',which='minor',length=6,width=2)
                 if save:
                     SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}_LogLog.png"
+                    # SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}_LogLog.eps"
                     print(f'\t{SaveFileName}')
                     plt.savefig(SaveFileName,bbox_inches = 'tight',dpi=300)
                     plt.close()

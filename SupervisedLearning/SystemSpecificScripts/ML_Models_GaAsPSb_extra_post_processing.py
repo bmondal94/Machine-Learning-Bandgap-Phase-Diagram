@@ -26,7 +26,6 @@ import MLmodelSVMFunctions as mlmf
 np.set_printoptions(precision=3, suppress=True)
 from sklearn.metrics import classification_report, accuracy_score, confusion_matrix, ConfusionMatrixDisplay
 oldstd = sys.stdout
-plt.rc('font', size=24)  
 
 #pd.set_option('display.max_columns', None)
 #pd.set_option('display.max_rows', None)
@@ -36,11 +35,22 @@ pd.set_option('display.expand_frame_repr', True)
 #pd.convert_dtypes()
 
 eps = (0.0001,)
+#%%
+#%%
+params = {'figure.figsize': (8, 6),
+          'legend.fontsize': 18,
+          'axes.labelsize': 24,
+          'axes.titlesize': 24,
+          'xtick.labelsize':24,
+          'ytick.labelsize': 24,
+          'errorbar.capsize':2}
+plt.rcParams.update(params)
+plt.rc('font', size=24)  
 #%% ------------------------- Load database -----------------------------------
 #UseVegardsLaw has higher priority during plotting over UseLatticeParamterModel
 #If UseLatticeParamterModel is true then it also compares the predicted lattice parameters from vegards law.
 
-dirpath = '/home/bmondal/MachineLerning/BandGapML_project/'
+dirpath = '/home/bmondal/MachineLerning/BandGapML_project/GaPAsSb/'
 BinaryConversion=True # 1: Direct, 0: Indirect
 OnlyGoodData = 0
 UseLatticeParamterModel = True # <-- Training is based on LATTICEPARAMETER1: Check mlmf.SVMModelTrainingFunctions(). Model learns & predicts in-plane lattice parameter only.
@@ -69,8 +79,53 @@ yfeatures = [s for s in list(df.columns) if s.startswith('BW')]
 
 #%%
 #%%%----------------------- Model paths ---------------------------------------
-dirpathSystem = dirpath+'/GaPAsSb/RESULTS/'
+dirpathSystem = dirpath+'/RESULTS/'
 dirpathSystem += '/GOODdataSET/' if OnlyGoodData else '/ORIGINALdataSET/' 
+
+#%% ----------------------- log-log plots -------------------------------------
+
+filename = f"{dirpathSystem}/TEST_BTQ" 
+outnamelist = ['my_rmse_fix']
+
+for fname in outnamelist:
+    SaveFigPathTmp = filename+'/BPD/PostProcessingFigs/Figs/'
+    OutdataFrame = mlgf.ReadOutputTxtFile(filename+'/MODELS/'+fname+'/output.txt')
+    SearchBPDTrials = glob.glob(f"{filename}/BPD/*/MODELS/{fname}/output.txt")
+    LastPointData = [OutdataFrame]
+    for OutPutTxtFile in SearchBPDTrials:
+        LastPointData.append(mlgf.ReadOutputTxtFile(OutPutTxtFile))  
+    OutdataFrame = pd.concat(LastPointData, axis=0)
+_ = mlpf.PlotPostProcessingDataSetSizeLogLog(OutdataFrame[['dataset_size','out-of-sample_root_mean_squared_error']],save=True,savepath=SaveFigPathTmp)
+# #%% ------------------------- Plot average predictions ------------------------
+# POINTS = POINTS_.copy()
+# POINTS['STRAIN'] = StrainArray[i]
+# bandgapEgseparationline = BandgapNatureModel.decision_function(POINTS[xfeatures])
+# # POINTS['bandgap'] = bandgapmag_model.predict(POINTS[xfeatures])
+# # The -ve bandgaps are fixed here. This may not necessary as in png plots we put the colorbar from 0 to ... anyway. But this is necessary for html plots.
+# POINTS['bandgap_best_model'] = mlmf.UpdatePredictionValues(bandgapmag_model.predict(POINTS[xfeatures]),'my_rmse_fix') # if my_rmse_fix
+# POINTS['EgN_best_model'] = BandgapNatureModel.predict(POINTS[xfeatures])
+
+# BANDGAP_dataframe = pd.DataFrame()
+# BANDGAP_nature_dataframe = pd.DataFrame()
+# for imp, model_path_tmp in enumerate(glob.glob(f'{LoadSVMFinalBPD}/TEST_BTQ/BPD/*/MODELS/my_rmse_fix')):
+#     svr_bandgap_tmp = f'{model_path_tmp}/svrmodel_bandgap'
+#     bandgapmag_model_tmp = pickle.load(open(svr_bandgap_tmp+'.sav', 'rb')) 
+#     BANDGAP_dataframe[f'bandgap_{imp}'] = mlmf.UpdatePredictionValues(bandgapmag_model_tmp.predict(POINTS[xfeatures]),'my_rmse_fix')
+    
+# for imp, model_path_tmp in enumerate(glob.glob(f'{LoadSVMFinalBPD}/TEST_BTQ/BPD/*/MODELS/accuracy')):
+#     svc_EgNature_tmp = f'{model_path_tmp}/svcmodel_EgNature_binary'
+#     BandgapNatureModel_tmp = pickle.load(open(svc_EgNature_tmp+'.sav', 'rb'))
+#     if SVRdependentSVC: 
+#         params = bandgapmag_model_tmp['svm'].get_params()
+#         params.pop('epsilon')
+#         BandgapNatureModel_tmp['svm'].set_params(**params)
+#     BANDGAP_nature_dataframe[f'EgN_{imp}'] = BandgapNatureModel_tmp.predict(POINTS[xfeatures])
+         
+# POINTS['bandgap'] = BANDGAP_dataframe.mean(axis=1)
+# POINTS['bandgap_std'] = BANDGAP_dataframe.std(axis=1)
+# POINTS['EgN'] = BANDGAP_nature_dataframe.mode(axis=1).iloc[:, 0].astype(int) # Note: if mode is 50:50 the tag is 0 (==indirect).
+# BANDGAP_nature_dataframe['EgN_accuracy'] = BANDGAP_nature_dataframe.mode(axis=1).iloc[:, 0].astype(int)
+# POINTS['EgN_accuracy'] = BANDGAP_nature_dataframe.apply(lambda a: np.mean([1 if val==a[-1] else 0 for val in a[:-1]]), axis=1)
 
 #%%%%---------------- Load models ---------------------------------------------
 LoadSVMFinalBPD = '/home/bmondal/MachineLerning/BandGapML_project/GaPAsSb/RESULTS/ORIGINALdataSET/'
@@ -168,4 +223,40 @@ mlpf.GenerateHeatmapSnapShots(StrainArray[:], tmp_featureseg, Predictions, movdi
                               BandGapNatureHeatmap=BandGapNatureHeatmap,OnlyContour=OnlyContours,
                               UseContoursText=False, ContoursText=[cnt, anticnt],
                               COMContourText=['DIRECT','INDIRECT'],RawData=dfff,RawDataColorColumn='NATURE',DrawRawData=1)
-   
+#%% --------------------------------- others ----------------------------------
+def plot_err_dist(XX, YY, text=None,data_unit_label='eV',save=False, savepath='.', figname='TruePredictErrorHist.png'):
+    plt.figure()
+    # Check error distribution
+    plt.subplot()
+    plt.title(text)
+    error = YY - XX
+    plt.hist(error, bins=25)
+    plt.xlabel(f'Prediction error ({data_unit_label})')
+    plt.ylabel('Count (arb.)')
+    plt.gca().tick_params(axis='both',which='major',length=10,width=2)
+    plt.gca().tick_params(axis='both',which='minor',length=6,width=2)
+    plt.xlim(-0.15,0.15)
+    if save:
+        plt.savefig(savepath+'/'+figname,bbox_inches = 'tight',dpi=300)
+        plt.close()
+    else:
+        plt.show()
+    return 
+
+dbname = '/home/bmondal/MachineLerning/BandGapML_project/GaPAsSb/RESULTS/ORIGINALdataSET/TEST_BTQ/BPD/Trial1/Data/my_rmse_fix/TestSetData.db'
+conn = sq.connect(dbname)
+TEST_df = pd.read_sql_query('SELECT * FROM TestSet', conn)
+conn.close()
+
+SaveFigPathTmp = '/home/bmondal/MachineLerning/BandGapML_project/GaPAsSb/RESULTS/ORIGINALdataSET/TEST_BTQ/BPD/Trial1/Figs/my_rmse_fix'
+
+svr_bandgap = '/home/bmondal/MachineLerning/BandGapML_project/GaPAsSb/RESULTS/ORIGINALdataSET/TEST_BTQ/BPD/Trial1/MODELS/my_rmse_fix/svrmodel_bandgap.sav'
+bandgapmag_model = pickle.load(open(svr_bandgap, 'rb')) 
+
+YY = bandgapmag_model.predict(df[xfeatures])
+XX = df['BANDGAP']
+plot_err_dist(XX, YY, text=None, data_unit_label='eV',save=True, savepath=SaveFigPathTmp, figname='FullSetTruePredictErrorHist_.png')
+
+YY = bandgapmag_model.predict(TEST_df[xfeatures])
+XX = TEST_df['BANDGAP']
+plot_err_dist(XX, YY,  data_unit_label='eV',save=True, savepath=SaveFigPathTmp, figname='TestSetTruePredictErrorHist_.png')

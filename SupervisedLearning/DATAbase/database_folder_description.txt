@@ -1,0 +1,5 @@
+QuaBin_BPD_MLDataBase_InPAsSb.db: Machine learning database for bandgap in biaxially strained InPAsSb system.The dataset contains data of the binary consituents of InPAsSb, namely InP, InAs, InSb and of pure quaternary InPAsSb systems with non-zero percentage of P, As, and Sb.
+
+Total_BPD_MLDataBase_GaPAsSb.db: Machine learning database for bandgap in biaxially strained GaPAsSb system.The dataset contains data of the binary consituents of InPAsSb, namely InP, InAs, InSb and of the ternary consituents of GaPAsSb, namely GaAsP, GaAsSb, GaPSb and of pure quaternary GaPAsSb systems with non-zero percentage of P, As, and Sb.
+
+Total_BPD_MLDataBase_InGaPAsSb.db: Machine learning database for bandgap in biaxially strained InGaPAsSb system.The combined above 2 datasets + a lot more random data from InGaPAsSb composition-strain space.

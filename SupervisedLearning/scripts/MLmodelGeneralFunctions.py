@@ -120,11 +120,17 @@ def ReturnGridResolution(gridResolution=None):
 
 
 def CreateDataForModel(dbname, ReturnPredictPoints=True, adddummies=False,
-                       BinaryConversion=False, gridResolution='middle',
+                       BinaryConversion=False, gridResolution='middle',NatureMap={2: 1, 3: 0, 4: 0},
                        start=[0, 0, 0, -5], end=[100, 100, 100, 5], compositionscale=100):
 
-    conn = sq.connect(dbname)
-    df = pd.read_sql_query('SELECT * FROM COMPUTATIONALDATA', conn)
+    if 'xlsx' in dbname:
+    	df = pd.read_excel(dbname, sheet_name='DFT_COMPUTATIONAL_DATA') 
+    elif 'db' in dbname:
+    	conn = sq.connect(dbname)
+    	df = pd.read_sql_query('SELECT * FROM COMPUTATIONALDATA', conn)
+    	conn.close()
+    else:
+    	print('wrong database format. Only sqlite3 .db and excel .xlsx is allowed.')
     df = df.dropna()
 
     if adddummies:
@@ -133,8 +139,8 @@ def CreateDataForModel(dbname, ReturnPredictPoints=True, adddummies=False,
         df = pd.get_dummies(
             df, columns=['NATUREDUMMIES'], prefix='', prefix_sep='')
     elif BinaryConversion:
-        df = df.replace({"NATURE": {2: 1, 3: 0, 4: 0}})
-
+        df = df.replace({"NATURE": NatureMap})
+        
     if ReturnPredictPoints:
         grn = ReturnGridResolution(gridResolution=gridResolution)
 

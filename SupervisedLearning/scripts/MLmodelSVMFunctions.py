@@ -10,20 +10,22 @@ import numpy as np
 from sklearn.svm import SVR, SVC
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score, KFold, cross_validate,ShuffleSplit
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score, KFold, cross_validate,ShuffleSplit,RandomizedSearchCV
 from sklearn.multioutput import MultiOutputRegressor, RegressorChain
 from sklearn.metrics import r2_score, mean_squared_error, classification_report, make_scorer,\
     accuracy_score, balanced_accuracy_score, confusion_matrix, ConfusionMatrixDisplay, mean_absolute_error,max_error
 import time
-import inspect, pickle
+# import inspect
+import pickle
 import matplotlib.pyplot as plt
-from matplotlib.ticker import FormatStrFormatter, MultipleLocator
+from matplotlib.ticker import FormatStrFormatter, MultipleLocator,LogLocator
 import pandas as pd
 import sys
 import os
 import sqlite3 as sq
 from datetime import datetime
 from contextlib import redirect_stdout
+from scipy import stats
 
 #%%
 params = {'legend.fontsize': 18,
@@ -95,7 +97,7 @@ def CreateResultDirectories(dirpathSystem_,BinaryConversion, refitm,dont_restart
     return SaveFigPath, SaveMoviePath, SaveHTMLPath, modelPATHS, DataFolderPath, OutPutTxtFile, svr_bandgap,\
         svc_EgNature, svr_bw, svr_bw_dm, svr_lp
     
-def PlotCV_results(svrgrid, paramss, scoringfn_tmp, SVRgridparameters_c, SVRgridparameters_gamma,
+def PlotCV_results_old(svrgrid, paramss, scoringfn_tmp, SVRgridparameters_c, SVRgridparameters_gamma,
                    titletxt="Validation accuracy",save=False, savepath='.', figname='GridSearchTestScore.png'):
     #https://scikit-learn.org/stable/auto_examples/svm/plot_rbf_parameters.html
     results = pd.DataFrame(svrgrid.cv_results_)
@@ -125,6 +127,54 @@ def PlotCV_results(svrgrid, paramss, scoringfn_tmp, SVRgridparameters_c, SVRgrid
         plt.title(titletxt)
         plt.gca().tick_params(axis='both',which='major',length=10,width=2)
         plt.gca().tick_params(axis='both',which='minor',length=6,width=2)
+        cb.ax.tick_params(labelsize=20,length=8,width=2)
+        # plt.tight_layout()
+        if save:
+            # pass
+            plt.savefig(savepath+'/'+f'{I}'+figname,bbox_inches = 'tight',dpi=300)
+            plt.close()
+        else:
+            plt.show()
+
+    return im
+
+def PlotCV_results(svrgrid, paramss, scoringfn_tmp, SVRgridparameters_c, SVRgridparameters_gamma,
+                   titletxt="Validation accuracy",save=False, savepath='.', figname='GridSearchTestScore.png'):
+    # print('Need implementation')
+    # print(svrgrid.cv_results_)
+    # return None
+    # #https://scikit-learn.org/stable/auto_examples/svm/plot_rbf_parameters.html
+    results = pd.DataFrame(svrgrid.cv_results_)
+    # print(svrgrid.cv_results_)
+    # print(results)
+    
+    for III in paramss:
+        if '_gamma' in III: 
+            indexname = 'param_' + III
+        elif '_C' in III:
+            colname = 'param_' + III
+            
+    if isinstance(scoringfn_tmp,str): scoringfn_tmp=('score',)
+    for I in scoringfn_tmp:
+        results[[colname,indexname]] = results[[colname,indexname]].astype(np.float64)
+        
+        fig, ax = plt.subplots()
+        im = ax.scatter(results[colname], results[indexname], c= results[f"mean_test_{I}"])
+    
+        ax.set_ylabel("$\gamma$")
+        ax.set_xlabel("C")
+        ax.set_yscale('log')
+        ax.set_xscale('log')
+        ax.xaxis.set_major_locator(LogLocator(numticks=999))
+        ax.xaxis.set_minor_locator(LogLocator(numticks=999, subs="auto"))
+        ax.yaxis.set_major_locator(LogLocator(numticks=999))
+        ax.yaxis.set_minor_locator(LogLocator(numticks=999, subs="auto"))
+        cb = fig.colorbar(im, label='mean test score',ax=ax)
+        # plt.yticks(np.arange(len(SVRgridparameters_gamma)), ["{:.0E}".format(x) for x in SVRgridparameters_gamma])
+        # plt.xticks(np.arange(len(SVRgridparameters_c)), ["{:.0E}".format(x) for x in SVRgridparameters_c], rotation=30 )
+        ax.set_title(None)
+        ax.tick_params(axis='both',which='major',length=10,width=2)
+        ax.tick_params(axis='both',which='minor',length=6,width=2)
         cb.ax.tick_params(labelsize=20,length=8,width=2)
         # plt.tight_layout()
         if save:
@@ -172,13 +222,13 @@ def Plot_Prediction_Actual_results(X, Y, tsxt=None, data_unit_label='eV',save=Fa
     else:
         plt.show()
 
-def plot_err_dist(XX, YY, text=None,data_unit_label='eV',save=False, savepath='.', figname='TruePredictErrorHist.png'):
+def plot_err_dist(XX, YY, text=None,data_unit_label='eV',save=False, savepath='.', nbins=25,figname='TruePredictErrorHist.png'):
     plt.figure()
     # Check error distribution
     plt.subplot()
     plt.title(text)
     error = YY - XX
-    plt.hist(error, bins=25)
+    plt.hist(error, bins=nbins)
     plt.xlabel(f'Prediction error ({data_unit_label})')
     plt.ylabel('Count (arb.)')
     plt.gca().tick_params(axis='both',which='major',length=10,width=2)
@@ -204,7 +254,7 @@ def PlotConfusionMatrix(y_testt, y_predictt, display_labels,save=False,savepath=
     return disp
 
 def UpdateConfuxionMatrixDisplay(disp):
-    disp.plot(colorbar=False)
+    # disp.plot(colorbar=False)
     # disp.ax_.set_title('Bandgap nature prediction\n1=direct, 0=indirect')
     disp.plot(colorbar=False)
     plt.setp(disp.ax_.get_yticklabels(), rotation='vertical',va='center')
@@ -441,7 +491,8 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
                                scoringfn='r2', njobs=-1, PlotResults=False,x_test=None, y_test=None,
                                save=False, savepath='.', figname='TruePrediction.png',DumpData=False,
                                SVRdependentSVC = False,SVRSVC_y_values=None,svr_data_unit='eV',
-                               dirpathSystem_='.',BinaryConversion=False,save_model=False):
+                               dirpathSystem_='.',BinaryConversion=False,save_model=False,
+                               SVM_Use_GridSearCV=False,CrossValidationFold = 5):
     # Fit regression model
     # Radial Basis Function (RBF) kernel
     if SplitInputData:
@@ -493,10 +544,21 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
     pipe = Pipeline(steps=[("scaler", scaler), ("svm", svm_model)])
     
     # Parameters of pipelines can be set using ‘__’ separated parameter names:
-    # C_range = [1e0, 1e1, 1e2, 1e3]
-    # gamma_range = np.logspace(-2, 2, 5)
-    C_range = [1e0, 1e1, 50, 1e2, 500, 1e3]
-    gamma_range = [1.e-02, 5.e-02, 1.e-01, 5.e-01, 1.e+00, 5.e+00, 1.e+01]
+    
+    if SVM_Use_GridSearCV:
+        # C_range = [1e0, 1e1, 1e2, 1e3]
+        # gamma_range = np.logspace(-2, 2, 5)
+        C_range = [1e0, 1e1, 50, 1e2, 500, 1e3]
+        gamma_range = [1.e-02, 5.e-02, 1.e-01, 5.e-01, 1.e+00, 5.e+00, 1.e+01]
+        # C_range = stats.loguniform.rvs(1.0e-02, 1.0e+03, size=20)
+        # gamma_range = stats.loguniform.rvs(1.e-02, 1.e+01, size=20)
+    else:
+        # C_range = stats.uniform(1.e-04, 1000)
+        # gamma_range = stats.uniform(1.e-06, 1.e-03)
+        C_range = stats.loguniform(1.0e-02, 1.0e+03)
+        gamma_range = stats.loguniform(1.e-02, 1.e+01)
+        n_iter_tmp = 1000 # How many total random combinations
+    
     param_grid={"svm__C": C_range, 
                 "svm__gamma": gamma_range}
     if multiregression:
@@ -508,18 +570,28 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
     else:
         pass
 
+    if SVM_Use_GridSearCV:
+        print(f"\t Hyperparameter optimization with GridSearchCV ({CrossValidationFold}-fold CV).")
+        svmgrid = GridSearchCV(estimator=pipe,
+                               param_grid=param_grid,
+                               cv = CrossValidationFold,
+                               scoring = scoringfn,
+                               n_jobs=njobs,
+                               refit=False)
+    else:
+        print(f"\t Hyperparameter optimization with RandomizedSearchCV ({CrossValidationFold}-fold CV).")
+        svmgrid = RandomizedSearchCV(estimator=pipe,
+                                     param_distributions=param_grid,
+                                     cv = CrossValidationFold,
+                                     n_iter = n_iter_tmp,
+                                     scoring = scoringfn,
+                                     n_jobs=njobs,
+                                     refit=False) 
     
-    svmgrid = GridSearchCV(estimator=pipe,
-                           param_grid=param_grid,
-                           cv = 5,
-                           scoring = scoringfn,
-                           n_jobs=njobs,
-                           refit=False)
-    
-    # t0 = time.time()
+    t0 = time.time()
     svmgrid.fit(X_train, y_train)
-    # svm_fit = time.time() - t0
-           
+    svm_fit = time.time() - t0
+    print(f"\t Hyperparameter optimization time = {svm_fit:.3f} s")       
 
     if PlotResults:
         CVfigname = 'BandgapNatureGridSearchTestScore.png' if SVCclassification else 'BandgapValueGridSearchTestScore.png'
@@ -699,7 +771,8 @@ def my_ml_model_training(df, filename,DoNotReset, xfeatures=['ANTIMONY','STRAIN'
                          PlotResults=False, LearningCurve=False,SplitInputData=True,test_set=None,
                          saveFig=False, savepath='.', figname='TruePrediction.png',svr_data_unit='eV',
                          LearningCurveT3=False,SVRdependentSVC=False,LearningCurveV0=False,
-                         dirpathSystem_='.',BinaryConversion=False,SaveResults=False):
+                         dirpathSystem_='.',BinaryConversion=False,SaveResults=False,
+                         SplitsArrayLearningCurve=None,SVM_Use_GridSearCV=False):
     if LearningCurveV0:
         df__ = GenerateDataV2(df, xfeatures=xfeatures, yfeatures=yfeatures)
         SUBDIVISION = max(10, len(df__)//100) # Create subset with 100 or 0.1% whichever is small, elements
@@ -725,8 +798,14 @@ def my_ml_model_training(df, filename,DoNotReset, xfeatures=['ANTIMONY','STRAIN'
         # df__ = GenerateDataV2(df, xfeatures=xfeatures, yfeatures=yfeatures)
         X, y = GenerateData(df, xfeatures=xfeatures, yfeatures=yfeatures)
         y = y/ydatadivfac
-        splits_array = [0.01,0.025,0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75]
-        ShuffleSplit_n_splits = 5
+        if SplitsArrayLearningCurve is not None:
+            try:
+                splits_array = list(SplitsArrayLearningCurve)
+            except:
+                sys.exit('SplitsArrayLearningCurve should be array or list of fractional number between 0 and 1')
+        else:
+            splits_array = [0.01,0.025,0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75]
+        ShuffleSplit_n_splits = REPEAT_loop
         print(f"Total convergence test points: {len(splits_array)}; Training sizes are:",*splits_array)
         print(f"ShuffleSplit: {ShuffleSplit_n_splits}-fold")
         save_model_ = False
@@ -760,7 +839,8 @@ def my_ml_model_training(df, filename,DoNotReset, xfeatures=['ANTIMONY','STRAIN'
                                                    multiregression=multiregression,regressorchain=regressorchain,save_model=save_model_,
                                                    SVCclassification=SVCclassification,scoringfn=scoringfn,PlotResults=PlotResults_,DumpData=save_final_data,
                                                    dirpathSystem_=dirpathSystem_tmp,BinaryConversion=BinaryConversion,svr_data_unit=svr_data_unit,
-                                                   SVRSVC_y_values=SVRSVC_y_values,SVRdependentSVC=SVRdependentSVC,save=True)
+                                                   SVRSVC_y_values=SVRSVC_y_values,SVRdependentSVC=SVRdependentSVC,save=True,
+                                                   SVM_Use_GridSearCV=SVM_Use_GridSearCV)
                 ii += 1
             
                 
@@ -820,7 +900,7 @@ def my_ml_model_training(df, filename,DoNotReset, xfeatures=['ANTIMONY','STRAIN'
                                                    multiregression=multiregression, regressorchain=regressorchain,svr_data_unit=svr_data_unit,
                                                    SVCclassification=SVCclassification,scoringfn=scoringfn,PlotResults=False,
                                                    dirpathSystem_=dirpathSystem_,BinaryConversion=BinaryConversion,
-                                                   x_test=x_test, y_test=y_test)
+                                                   x_test=x_test, y_test=y_test,SVM_Use_GridSearCV=SVM_Use_GridSearCV)
     else:    
         X, y = GenerateData(df, xfeatures=xfeatures, yfeatures=yfeatures)
         y = y/ydatadivfac
@@ -853,7 +933,7 @@ def my_ml_model_training(df, filename,DoNotReset, xfeatures=['ANTIMONY','STRAIN'
                                        SVCclassification=SVCclassification,save_model=save_model,
                                        scoringfn=scoringfn,PlotResults=PlotResults,SVRdependentSVC=SVRdependentSVC,
                                        save=saveFig, savepath=savepath, figname=figname,DumpData=SaveResults,
-                                       dirpathSystem_=dirpathSystem_,BinaryConversion=BinaryConversion)            
+                                       dirpathSystem_=dirpathSystem_,BinaryConversion=BinaryConversion,SVM_Use_GridSearCV=SVM_Use_GridSearCV)            
 
     return 
 
@@ -885,7 +965,8 @@ def SVMModelTrainingFunctions(df, xfeatures, DoNotResetfolder, yfeatures=None, s
                            scoringfn='r2',refit=True,SplitInputData=True,test_set=None,
                            save_model=True,PlotResults=False, LearningCurve=False,LearningCurveT3=False,
                            saveFig=False, savepath='.', figname='TruePrediction.png',
-                           dirpathSystem_='.',BinaryConversion=False):
+                           dirpathSystem_='.',BinaryConversion=False,SplitsArrayLearningCurve=None,
+                           SVM_Use_GridSearCV=True):
     """
     This function trains the different SVM() models.
 
@@ -951,6 +1032,7 @@ def SVMModelTrainingFunctions(df, xfeatures, DoNotResetfolder, yfeatures=None, s
         Whether to plot the croos validation results. Default is False.
     LearningCurve : bool, optional
         If you want to get learning curve. Default is False.
+    SplitsArrayLearningCurve : list or array of fractionas, optional
 
     Returns
     -------
@@ -966,8 +1048,9 @@ def SVMModelTrainingFunctions(df, xfeatures, DoNotResetfolder, yfeatures=None, s
         _ = my_ml_model_training(df, svr_bandgap+'.sav', DoNotResetfolder,xfeatures=xfeatures, test_set=test_set,REPEAT_loop=RepeatLearningCurveTimes,
                                  yfeatures='BANDGAP', scoringfn=scoringfn,refit=refit,SplitInputData=SplitInputData,
                                  save_model=save_model,PlotResults=PlotResults,LearningCurve=LearningCurve,LearningCurveT3=LearningCurveT3,
-                                 saveFig=saveFig, savepath=savepath, figname=figname,SVRdependentSVC=SVRdependentSVC,
-                                 dirpathSystem_=dirpathSystem_,BinaryConversion=BinaryConversion,svr_data_unit='eV',SaveResults=SaveResults)
+                                 saveFig=saveFig, savepath=savepath, figname=figname,SVRdependentSVC=SVRdependentSVC,SplitsArrayLearningCurve=SplitsArrayLearningCurve,
+                                 dirpathSystem_=dirpathSystem_,BinaryConversion=BinaryConversion,svr_data_unit='eV',SaveResults=SaveResults,
+                                 SVM_Use_GridSearCV=SVM_Use_GridSearCV)
     # Training bandgap SVR() model
     if retrainlp: 
         assert svr_lp is not None, 'Lattice parameter model training is requested but no filename is supplied for saving final model.'
@@ -977,10 +1060,11 @@ def SVMModelTrainingFunctions(df, xfeatures, DoNotResetfolder, yfeatures=None, s
         print("***************************************************************************")
         print("* Model training for lattice parameter prediction (SVR):")
         print(f"The model will learn and predict the {yfeatures_}. Make sure this is what you want to learn.")
-        _ = my_ml_model_training(df, svr_lp+'.sav',DoNotResetfolder, xfeatures=xfeatures, 
+        _ = my_ml_model_training(df, svr_lp+'.sav',DoNotResetfolder, xfeatures=xfeatures, SplitsArrayLearningCurve=SplitsArrayLearningCurve,
                                  yfeatures=yfeatures_, scoringfn=scoringfn,refit=refit,SaveResults=SaveResults,
                                  saveFig=saveFig, savepath=savepath, figname=figname,svr_data_unit='$\AA$',
-                                 save_model=save_model,PlotResults=PlotResults,LearningCurve=LearningCurve)
+                                 save_model=save_model,PlotResults=PlotResults,LearningCurve=LearningCurve,
+                                 SVM_Use_GridSearCV=SVM_Use_GridSearCV)
     
     # Training Bloch weights SVR() model    
     if retrainbw: 
@@ -1046,9 +1130,10 @@ def SVMModelTrainingFunctions(df, xfeatures, DoNotResetfolder, yfeatures=None, s
                                      xfeatures=xfeatures, SplitInputData=SplitInputData,REPEAT_loop=RepeatLearningCurveTimes,
                                      SVCclassification=True, yfeatures=yfeature_,test_set=test_set,
                                      scoringfn=scoringfn,refit=refit,save_model=save_model,LearningCurveT3=LearningCurveT3,
-                                     PlotResults=PlotResults,LearningCurve=LearningCurve,
+                                     PlotResults=PlotResults,LearningCurve=LearningCurve,SplitsArrayLearningCurve=SplitsArrayLearningCurve,
                                      saveFig=saveFig, savepath=savepath, figname=figname,SVRdependentSVC=SVRdependentSVC,
-                                     dirpathSystem_=dirpathSystem_,BinaryConversion=BinaryConversion,SaveResults=SaveResults)
+                                     dirpathSystem_=dirpathSystem_,BinaryConversion=BinaryConversion,SaveResults=SaveResults,
+                                     SVM_Use_GridSearCV=SVM_Use_GridSearCV)
     return
 
 #---------------- test binary models with ternary points ----------------------

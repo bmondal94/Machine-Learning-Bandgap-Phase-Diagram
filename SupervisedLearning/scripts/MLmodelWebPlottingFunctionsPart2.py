@@ -350,10 +350,11 @@ def DrawBandgapHeatmapWebV2Slider(pp,XYZcloumns,countourset, fname="patchh.html"
                                 ContourText=None,page_title = "Bandgap phase diagram",
                                 savefig=False, scale=1, vmin=-1, vmax=1,
                                 cmappp="viridis",color='black', DrawNatureContours=True,
-                                line_width=4, text=['a','b','c'],SelectionText='Slider:: Strain',
+                                line_width=4, text=['a','b','c'],SelectionText='Strain',
                                 offset_bottom=-0.14, offset_left=-0.15,offset_right=0.15,
                                 fontsize='3em', cbarlabel_fontsize='3em',cbarlabel='',
-                                label_colors=['black','black','black'],
+                                label_colors=['black','black','black'],TOOLTIPS_z_txt='Bandgap',
+                                TOOLTIPS_z_txt_unit='eV',
                                 tick_colors=['black','black','black'],
                                 tick_length=3, TickLabel_fontsize='3em',step=0.1,
                                 SQRT3o2 = 0.8660254037844386):
@@ -367,7 +368,7 @@ def DrawBandgapHeatmapWebV2Slider(pp,XYZcloumns,countourset, fname="patchh.html"
                 assert cntNumber-1 <= len(ContourText), 'Total number of extra contours supplied is more than number of contour texts.'
 
     TOOLTIPS, FORMATTER = mlwpf.DefHoverTools(text=text)
-    TOOLTIPS += [("Bandgap", "@values eV")]
+    TOOLTIPS += [(f"{TOOLTIPS_z_txt}", f"@values {TOOLTIPS_z_txt_unit}")]
     tool = HoverTool(tooltips = TOOLTIPS,formatters=FORMATTER)
     hmapdict = {}
     for ii, df in pp.items():
@@ -377,7 +378,7 @@ def DrawBandgapHeatmapWebV2Slider(pp,XYZcloumns,countourset, fname="patchh.html"
         X, Y = ConversionCartesian2Ternary(df[XYZcloumns[0]], df[XYZcloumns[1]]) 
         hex_with_values = hv.Points((X, Y,df[XYZcloumns[2]]), vdims='values')
         hex_with_values.opts(color='values',tools=[tool],size=MarkerSize_,frame_width=frame_width_, data_aspect=1,
-                             colorbar=True,colorbar_opts={'title':'Bandgap (eV)'},marker='s',
+                             colorbar=True,colorbar_opts={'title':f'{cbarlabel}'},marker='s',
                              cmap=cmappp)
         
         
