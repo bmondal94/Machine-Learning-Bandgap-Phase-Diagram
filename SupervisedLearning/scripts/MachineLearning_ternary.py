@@ -80,8 +80,10 @@ yfeatures = None
 subname = {'GaAs':(5.689,1.4662),'GaP':(5.474,2.3645),\
            'Si':(5.42103,1.1915),'GaSb':(6.13383,0.641),\
                'InP':(5.93926,1.4341)} # lattice parameter, bandgap
-EqulibriumData = df[df['STRAIN'].abs() < eps[0]]
-EqmDf = mlpf.generate_scatter_data(EqulibriumData[['PHOSPHORUS', 'ANTIMONY', 'ARSENIC']]) 
+
+if Plot_Ternary_Figs:
+    EqulibriumData = df[df['STRAIN'].abs() < eps[0]]
+    EqmDf = mlpf.generate_scatter_data(EqulibriumData[['PHOSPHORUS', 'ANTIMONY', 'ARSENIC']]) 
 
 #%%++++++++++++++++++++++++ SVM model +++++++++++++++++++++++++++++++++++++++++
 #%%% prority: PerformAll>TESTi
