@@ -19,6 +19,7 @@ from datetime import datetime
 import scipy.interpolate as inpr
 
 import MLmodelGeneralFunctions as mlgf
+import MLmodelGeneralPlottingFunctions as mlgpf
 import MLmodelPlottingFunctions as mlpf
 import MLmodelWebPlottingFunctions as mlwpf
 import MLmodelWebPlottingFunctionsPart2 as mlwpfP2
@@ -193,7 +194,7 @@ if retrain_models:
                                 for OutPutTxtFile in SearchBPDTrials:
                                     LastPointData.append(mlgf.ReadOutputTxtFile(OutPutTxtFile))  
                                 OutdataFrame = pd.concat(LastPointData, axis=0)
-                            mlpf.PlotPostProcessingDataSetSize(OutdataFrame,save=True,savepath=f"{dirpathSystem__}/Figs/{refit__}/")
+                            mlgpf.PlotPostProcessingDataSetSize(OutdataFrame,save=True,savepath=f"{dirpathSystem__}/Figs/{refit__}/")
             if train_lp: TOTALTRAINING = TOTALTRAINING_backup.copy()
     print('\n*All model training successful.')
 
@@ -213,10 +214,10 @@ for XYZ in ['BTQ']:# ,'BTq_ct','Qbt_ct']:
             for OutPutTxtFile in SearchBPDTrials:
                 LastPointData.append(mlgf.ReadOutputTxtFile(OutPutTxtFile))  
             OutdataFrame = pd.concat(LastPointData, axis=0)
-        # _ = mlpf.PlotPostProcessingDataSetSizeV0(OutdataFrame,save=True,savepath=SaveFigPathTmp)
-        _ = mlpf.PlotPostProcessingDataSetSize(OutdataFrame,save=True,savepath=SaveFigPathTmp)
-        # _ = mlpf.PlotPostProcessingDataSetSizeLogLog(OutdataFrame,save=True,savepath=SaveFigPathTmp)
-        # _ = mlpf.PlotPostProcessingDataSetSizeLogLog_v2(OutdataFrame,save=True,savepath=SaveFigPathTmp)
+        # _ = mlgpf.PlotPostProcessingDataSetSizeV0(OutdataFrame,save=True,savepath=SaveFigPathTmp)
+        _ = mlgpf.PlotPostProcessingDataSetSize(OutdataFrame,save=True,savepath=SaveFigPathTmp)
+        # _ = mlgpf.PlotPostProcessingDataSetSizeLogLog(OutdataFrame,save=True,savepath=SaveFigPathTmp)
+        # _ = mlgpf.PlotPostProcessingDataSetSizeLogLog_v2(OutdataFrame,save=True,savepath=SaveFigPathTmp)
 
 #%%%********** Load model and predictions *************************************
 #%%%%---------- Test ternary trained model on known ternary -------------------
@@ -243,7 +244,7 @@ if DataCuration:
     CommonIdx = WrongPrediction.index.intersection(BadSamples.index)
     
     
-    ax = mlpf.plot_true_predict_results(TestPoints['BANDGAP'], TestPoints['Predictedbandgap'], text=None,savehist=False,savepath=SaveFigPath)
+    ax = mlgpf.plot_true_predict_results(TestPoints['BANDGAP'], TestPoints['Predictedbandgap'], text=None,savehist=False,savepath=SaveFigPath)
     ax.scatter(BadSamples['BANDGAP'], BadSamples['Predictedbandgap'], color='r',marker='*')
     ax.scatter(WrongPrediction['BANDGAP'], WrongPrediction['Predictedbandgap'], color='k',marker='.')
     SaveFigPath_tmpp='/home/bmondal/MachineLerning/BandGapML_project/GaPAsSb/RESULTS/ORIGINALdataSET/TEST_BPD/Figs/neg_root_mean_squared_error'
@@ -332,14 +333,14 @@ Xp, Yp, POINTS_, CondPOSI, Zval = mlgf.CreateDataForPredictionLoopV3(resolution=
                                                                     features=xfeatures) 
 #%%%%--------------- Some special extra plots ---------------------------------
 OutdataFrame = mlgf.SpecialPlots_1(dirpathSystem + '/TEST_BTQ')
-fig_tmp, ax_tmp = mlpf.PlotPostProcessingDataSetSize_special(OutdataFrame,save=True,savepath=SaveFigPath)
+fig_tmp, ax_tmp = mlgpf.PlotPostProcessingDataSetSize_special(OutdataFrame,save=True,savepath=SaveFigPath)
 
 # OutdataFrame_dict = mlgf.SpecialPlots_2([f'{dirpathSystem}/TEST_BTq_ct',f'{dirpathSystem}/TEST_Qbt_ct'],'root_mean_squared_error','my_rmse_fix')
 # savefig_tmp=False
 # fig_tmp, ax_tmp = None, None
 # ax_plot_color='k'
 # for OutdataFrame in OutdataFrame_dict.values():
-#     fig_tmp, ax_tmp = mlpf.PlotPostProcessingDataSetSize_special(OutdataFrame,fig=fig_tmp,ax=ax_tmp,save=savefig_tmp,
+#     fig_tmp, ax_tmp = mlgpf.PlotPostProcessingDataSetSize_special(OutdataFrame,fig=fig_tmp,ax=ax_tmp,save=savefig_tmp,
 #                                                                  ax_yminortick_multi=5,ax_plot_color=ax_plot_color,#ax_y_precision='%.1f',
 #                                                                  savepath=SaveFigPath,ProjectionDict = {'set1':{'root_mean_squared_error':'RMSE (meV)'}})
 #     savefig_tmp=True
@@ -351,7 +352,7 @@ fig_tmp, ax_tmp = mlpf.PlotPostProcessingDataSetSize_special(OutdataFrame,save=T
 # fig_tmp, ax_tmp = None, None
 # ax_plot_color='k'
 # for OutdataFrame in OutdataFrame_dict.values():
-#     fig_tmp, ax_tmp = mlpf.PlotPostProcessingDataSetSize_special(OutdataFrame,fig=fig_tmp,ax=ax_tmp,save=savefig_tmp,
+#     fig_tmp, ax_tmp = mlgpf.PlotPostProcessingDataSetSize_special(OutdataFrame,fig=fig_tmp,ax=ax_tmp,save=savefig_tmp,
 #                                                                  ax_plot_color=ax_plot_color,ax_y_precision='%.2f',
 #                                                                  savepath=SaveFigPath,ProjectionDict = {'set1':{'accuracy_score':'Accuracy score'}})
 #     savefig_tmp=True
@@ -437,19 +438,19 @@ print(f"\nThe maximum bandgap value is found at \n{tmp_max_value_info}")
 
 #%%%% ---------- Plot bandgap distribution results over trial models ----------
 TMP_Eg_STD_df =  pd.concat([Predictions[i]['bandgap_std']*1000 for i in Predictions]).reset_index(drop=True)
-mlpf.PlotPredictionStdFullSpace(TMP_Eg_STD_df, nbins=200, data_unit_label=' (meV)', PlotLogScale=True,
+mlgpf.PlotPredictionStdFullSpace(TMP_Eg_STD_df, nbins=200, data_unit_label=' (meV)', PlotLogScale=True,
                                 x_major_locator=10,
                                 save=True, savepath=SaveFigPath,figname='PredictSTDHistFullSpace_Log.png')
 
-mlpf.PlotPredictionStdFullSpace(TMP_Eg_STD_df, nbins=200, data_unit_label=' (meV)', PlotLogScale=False,
+mlgpf.PlotPredictionStdFullSpace(TMP_Eg_STD_df, nbins=200, data_unit_label=' (meV)', PlotLogScale=False,
                                 x_major_locator=10,y_minor_locator=0.25*1e4,
                                 save=True, savepath=SaveFigPath,figname='PredictSTDHistFullSpace.png')
 
 TMP_Eg_STD_df =  pd.concat([Predictions[i]['EgN_accuracy'] for i in Predictions]).reset_index(drop=True)
-mlpf.PlotPredictionStdFullSpace(TMP_Eg_STD_df, nbins=200, data_unit_label='',xlabel='Accuracy',PlotLogScale=True,
+mlgpf.PlotPredictionStdFullSpace(TMP_Eg_STD_df, nbins=200, data_unit_label='',xlabel='Accuracy',PlotLogScale=True,
                                 x_major_locator=None,
                                 save=True, savepath=SaveFigPath,figname='PredictAccuracyHistFullSpace_Log.png')
-mlpf.PlotPredictionStdFullSpace(TMP_Eg_STD_df, nbins=200, data_unit_label='',xlabel='Accuracy',PlotLogScale=False,
+mlgpf.PlotPredictionStdFullSpace(TMP_Eg_STD_df, nbins=200, data_unit_label='',xlabel='Accuracy',PlotLogScale=False,
                                 x_major_locator=None,y_minor_locator=0.5*1e5,
                                 save=True, savepath=SaveFigPath,figname='PredictAccuracyHistFullSpace.png')
 
@@ -483,7 +484,7 @@ POINTS['EgN'] = BANDGAP_nature_dataframe.mode(axis=1).iloc[:, 0].astype(int) # N
 BANDGAP_nature_dataframe['EgN_accuracy'] = BANDGAP_nature_dataframe.mode(axis=1).iloc[:, 0].astype(int)
 POINTS['EgN_accuracy'] = BANDGAP_nature_dataframe.apply(lambda a: np.mean([1 if val==a[-1] else 0 for val in a[:-1]]), axis=1)
 
-mlpf.plot_test_results(df['BANDGAP'], POINTS['bandgap'], text=None, my_color=None, 
+mlgpf.plot_test_results(df['BANDGAP'], POINTS['bandgap'], text=None, my_color=None, 
                        save=True, savepath=SaveFigPath,figname='DFTtrue_TestAverageBandgap_DFTSpace.png',
                        marker='.', data_unit_label='eV',xlabel_text="True values",ylabel_txt="Predictions")
 mlmf.plot_err_dist(df['BANDGAP'], POINTS['bandgap'], text=None, data_unit_label='eV',nbins=25,
@@ -582,7 +583,7 @@ for imp, model_path_tmp in enumerate(glob.glob(f'{LoadSVMFinalBPD}/TEST_BTQ/BPD/
     BANDGAP_dataframe[f'bandgap_{imp}'] = bandgapmag_model_tmp.predict(pd.DataFrame([[33.33,33.33,100-66.66,x] for x in XX], columns=xfeatures))
 YY = BANDGAP_dataframe.mean(axis=1)
 
-mlpf.PlotStrainBandgap2Dplot(XX,YY,savepath=f"{SaveFigPath}", save=1)
+mlgpf.PlotStrainBandgap2Dplot(XX,YY,savepath=f"{SaveFigPath}", save=1)
 
 #%%%----------------------- Ternary axis labels--------------------------------
 axislabels = ["GaAs", "GaSb", "GaP"] # Left, right, bottom
@@ -694,7 +695,7 @@ if UseLatticeParamterModel:
     else:
         XX_lp = EqulibriumDataModel['LATTICEPARAMETER1']
     LATTICEPARAMETER1_vegards = mlgf.CalculateLatticeParametersFromVegardsLaw_ternary(EqulibriumDataModel,['PHOSPHORUS', 'ANTIMONY', 'ARSENIC'])
-    mlpf.plot_test_results(XX_lp,LATTICEPARAMETER1_vegards,
+    mlgpf.plot_test_results(XX_lp,LATTICEPARAMETER1_vegards,
                            xlabel_text='Model predictions',ylabel_txt="Vegard's law",data_unit_label='$\AA$',
                            save=1, savepath=f"{SubstrateEffect}", figname="VegardsLaw_lp_Modelprediction_compare.png")
 

@@ -18,6 +18,7 @@ import glob, sys, os, shutil
 from datetime import datetime
 
 import MLmodelGeneralFunctions as mlgf
+import MLmodelGeneralPlottingFunctions as mlgpf
 import MLmodelPlottingFunctions as mlpf
 import MLmodelWebPlottingFunctions as mlwpf
 import MLmodelWebPlottingFunctionsPart2 as mlwpfP2
@@ -95,7 +96,7 @@ for fname in outnamelist:
     for OutPutTxtFile in SearchBPDTrials:
         LastPointData.append(mlgf.ReadOutputTxtFile(OutPutTxtFile))  
     OutdataFrame = pd.concat(LastPointData, axis=0)
-_ = mlpf.PlotPostProcessingDataSetSizeLogLog(OutdataFrame[['dataset_size','out-of-sample_root_mean_squared_error']],save=True,savepath=SaveFigPathTmp)
+_ = mlgpf.PlotPostProcessingDataSetSizeLogLog(OutdataFrame[['dataset_size','out-of-sample_root_mean_squared_error']],save=True,savepath=SaveFigPathTmp)
 # #%% ------------------------- Plot average predictions ------------------------
 # POINTS = POINTS_.copy()
 # POINTS['STRAIN'] = StrainArray[i]
