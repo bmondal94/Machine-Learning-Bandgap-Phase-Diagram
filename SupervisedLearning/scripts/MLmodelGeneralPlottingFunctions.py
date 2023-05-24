@@ -119,6 +119,42 @@ def plot_test_results(XX, YY, text=None, my_color=None, tn=1, nrows=1, ncols=1, 
     else:
         plt.show()
     return ax
+
+def plot_test_results_separateExp_Qua(XX, YY, ax=None, lm1=None, lm2=None,
+                                      fig=None,text=None, my_color=None, ShowLegend=True,LABEL=None,
+                                      save=False, savepath='.', figname='TruePrediction.png',marker=None,
+                                      data_unit_label='eV',xlabel_text="True values",ylabel_txt="Predictions"):
+    if fig is None:
+        fig = plt.figure(figsize=(8, 8))
+    if ax is None:
+        ax = fig.add_subplot(1, 1, 1, aspect='equal')
+        ax.set_title(text)
+        ax.set_xlabel(f"{xlabel_text} ({data_unit_label})")
+        ax.set_ylabel(f"{ylabel_txt} ({data_unit_label})")
+        
+    ax.plot(XX, YY, c=my_color,lw=2, label=LABEL) #,marker=marker
+    p1 = max(max(YY), max(XX)) #max(XX)
+    p2 = min(min(YY), min(XX)) #min(XX)
+    if (lm1 is None) or (p1>lm1):lm1 = p1
+    if (lm2 is None) or (p2<lm2):lm2 = p2
+    ax.set_xlim(lm2, lm1)
+    ax.set_ylim(lm2, lm1)
+    ax.plot([lm1, lm2], [lm1, lm2], 'k-')
+    ax.xaxis.set_major_locator(MultipleLocator(0.2))
+    ax.yaxis.set_major_locator(MultipleLocator(0.2))
+    ax.xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+    ax.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+    ax.tick_params(axis='both',which='major',length=10,width=2)
+    ax.tick_params(axis='both',which='minor',length=6,width=2)
+    plt.tight_layout()
+    if ShowLegend: ax.legend()
+    if save:
+        # if ShowLegend: plt.legend()
+        plt.savefig(savepath+'/'+figname,bbox_inches = 'tight',dpi=300)
+        plt.close()
+    else:
+        plt.show()
+    return fig, ax, lm1, lm2
     
 def PlotTruePredictionCorrelation(Y_test, Y_pred, ttext, nrows=3):
     nproperties = Y_test.shape[1]
@@ -132,7 +168,7 @@ def plot_err_dist(XX, YY, text, tn=1, nrows=1, ncols=1, index=1,data_unit_label=
     # Check error distribution
     plt.subplot(nrows, ncols, index)
     plt.title(text)
-    error = YY - XX
+    error = XX - YY
     plt.hist(error, bins=25)
     plt.gca().tick_params(axis='both',which='major',length=10,width=2)
     plt.gca().tick_params(axis='both',which='minor',length=6,width=2)
@@ -221,7 +257,7 @@ def PlotPostProcessingDataSetSizeV0(pp,save=False, savepath='.'):
             plt.show()
     return ax
 
-def PlotPostProcessingDataSetSize(pp,save=False, savepath='.',ProjectionDict=None): 
+def PlotPostProcessingDataSetSize(pp,save=False, savepath='.',ProjectionDict=None,figformat='png'): 
     if ProjectionDict is None:
         ProjectionDict = {'set1':{'root_mean_squared_error':'RMSE (meV)','r2_score':'$\mathrm{R}^2$'},'set2':{'mean_absolute_error':'MAE (meV)'},\
                           'set3':{'max_error':'Max error (meV)'},'set4':{'accuracy_score':'Accuracy score','balanced_accuracy_score': 'Balanced accuracy score'},\
@@ -284,15 +320,15 @@ def PlotPostProcessingDataSetSize(pp,save=False, savepath='.',ProjectionDict=Non
                 ax.tick_params(axis='both',which='major',length=10,width=2)
                 ax.tick_params(axis='both',which='minor',length=6,width=2)
                 if save:
-                    SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}.png"
-                    # SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}.eps"
+                    SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}.{figformat}"
                     plt.savefig(SaveFileName,bbox_inches = 'tight',dpi=300)
                     plt.close()
                 else:
                     plt.show()
     return 
 
-def PlotPostProcessingDataSetSize_special(pp,save=False, ax=None, fig=None, savepath='.',ProjectionDict=None, ax_y_precision=None,ax_yminortick_multi=5,ax_plot_color='k'): 
+def PlotPostProcessingDataSetSize_special(pp,save=False, ax=None, fig=None, savepath='.',ProjectionDict=None, 
+                                          ax_y_precision=None,ax_yminortick_multi=5,ax_plot_color='k',figformat='png'): 
     if ProjectionDict is None:
         ProjectionDict = {'set1':{'root_mean_squared_error':'RMSE (meV)','accuracy_score':'Accuracy score'}}
     elif isinstance(ProjectionDict,dict):
@@ -337,7 +373,7 @@ def PlotPostProcessingDataSetSize_special(pp,save=False, ax=None, fig=None, save
                 ax.tick_params(axis='both',which='major',length=10,width=2)
                 ax.tick_params(axis='both',which='minor',length=6,width=2)
                 if save:
-                    SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}.png"
+                    SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}.{figformat}"
                     plt.savefig(SaveFileName,bbox_inches = 'tight',dpi=300)
                     plt.close()
                 else:
@@ -357,7 +393,7 @@ class OOMFormatter(ScalarFormatter):
         if self._useMathText:
             self.format = r'$\mathdefault{%s}$' % self.format
 
-def PlotPostProcessingDataSetSizeLogLog(pp,save=False, savepath='.'):      
+def PlotPostProcessingDataSetSizeLogLog(pp,save=False, savepath='.',figformat='png'):      
     ProjectionDict = {'set1':{'root_mean_squared_error':'RMSE (meV)'},'set2':{'mean_absolute_error':'MAE (meV)'},\
                           'set3':{'accuracy_score':'Accuracy-score'}}
     # ProjectionDict = {'set1':{'root_mean_squared_error':'RMSE (meV)'}}
@@ -396,8 +432,7 @@ def PlotPostProcessingDataSetSizeLogLog(pp,save=False, savepath='.'):
                         ax2.tick_params(axis='both',which='major',length=10,width=2)
                         ax2.tick_params(axis='both',which='minor',length=6,width=2)
                 if save:
-                    SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}_LogLog.png"
-                    # SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}_LogLog.eps"
+                    SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}_LogLog.{figformat}"
                     print(f'\t{SaveFileName}')
                     plt.savefig(SaveFileName,bbox_inches = 'tight',dpi=300)
                     plt.close()
@@ -405,7 +440,7 @@ def PlotPostProcessingDataSetSizeLogLog(pp,save=False, savepath='.'):
                     plt.show()
     return 
 
-def PlotPostProcessingDataSetSizeLogLog_v2(pp,save=False, savepath='.'):      
+def PlotPostProcessingDataSetSizeLogLog_v2(pp,save=False, savepath='.',figformat='png'):      
     ProjectionDict = {'set1':{'root_mean_squared_error':'log$_{10}$(RMSE) (meV)'}}
     pp_mean = pp.groupby('dataset_size', as_index=False).mean(numeric_only=True) 
     pp_std = pp.groupby('dataset_size', as_index=False).std(numeric_only=True) 
@@ -424,7 +459,7 @@ def PlotPostProcessingDataSetSizeLogLog_v2(pp,save=False, savepath='.'):
                 ax.tick_params(axis='both',which='minor',length=6,width=2)
                 ax.xaxis.set_minor_locator(MultipleLocator(0.1))
             if save:
-                SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}_LogLog_v2.png"
+                SaveFileName = f"{savepath}/{LL}_{'-'.join(WhichMetric)}_LogLog_v2.{figformat}"
                 print(f'\t{SaveFileName}')
                 plt.savefig(SaveFileName,bbox_inches = 'tight',dpi=300)
                 plt.close()

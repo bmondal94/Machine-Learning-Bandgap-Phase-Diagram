@@ -470,6 +470,32 @@ def ReadOutputTxtFile(filename__):
     pp = pd.DataFrame(training_dataset[1:]) 
     return pp
 
+def ReadOutputTxtFile_TABLE(filename__):
+    pattern_3 = 'Training dataset size'
+    pattern_4 = ['out-of-sample']
+    pattern_4_map = {'out-of-sample':'(o'}
+    pattern_5 = ['r2_score','root_mean_squared_error','mean_absolute_error','max_error','accuracy_score','balanced_accuracy_score']
+    training_dataset = []; tmp_dict = {}
+    with open(filename__, 'r') as searchfile:
+        for line in searchfile.readlines():
+            if pattern_3 in line:
+                training_dataset.append(tmp_dict)
+                tmp_dict = {}
+                tmp_dict['dataset_size'] = int(line.split()[-1]) 
+            else:
+                for pattern_4_tmp in pattern_4:
+                    if (pattern_4_tmp in line) and ((line.startswith(pattern_4_map[pattern_4_tmp])) or (line.startswith('svrsvc_'+pattern_4_map[pattern_4_tmp]))):
+                        for pattern_5_tmp in pattern_5:
+                            if pattern_5_tmp in line:
+                                split_val = (line.split(':')[-1]).split()
+                                put_val = float(split_val[0])
+                                if split_val[-1] == 'eV':
+                                    put_val *= 1000 #<-- eV to meV conversion 
+                                tmp_dict[pattern_4_tmp+'_'+pattern_5_tmp] = put_val
+        training_dataset.append(tmp_dict)
+    pp = pd.DataFrame(training_dataset[1:]) 
+    return pp
+
 def FindBestTrialBTQ(filename__):
     SearchBPDTrials = glob.glob(filename__)
     cv_score = []

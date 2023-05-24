@@ -45,13 +45,21 @@ def AssertNoContradiction(TrainEgNature=True,SVRdependentSVC=False,TrainNatureOn
         TrainNatureOnly = False
         TrainEgNature = False
         ModelDescription = 'Only bandgap magnitude prediction is chossen: \n\tSVR(rbf) model'
-        Add2PathALdirectory = 'SVRC'
+        Add2PathALdirectory = 'SVR'
         
     if randdom_sampling_prediction: Add2PathALdirectory += '_RandomSamplingPred'
     if Static_m_Models: Add2PathALdirectory += '_StaticMmodels'
     if PredictProb: Add2PathALdirectory += '_PredictProb'
     return ModelDescription,Add2PathALdirectory,TrainEgNature,SVRdependentSVC,TrainNatureOnly,FinalSVRDependentSVC,TrainEgOnly
 
+def WelcomeMsg():
+    print(f"{'='*78}\n{'Welcome to Active Learning':.^78}")
+    My_MSG='''
+            The code was written by Badal Mondal as a part of the PhD project. 
+                More details can be found here:
+            '''
+    print(f"{My_MSG}")
+    
 def convert_conc2atomnumber(concsrray,natoms=216):
     N_atom = (concsrray[['INDIUM']]*(natoms/100)).round(0).astype(int)
     N_atom['GALLIUM'] =natoms - N_atom['INDIUM']
@@ -65,7 +73,7 @@ def CreateDataForModel(dbname, adddummies=False, BinaryConversion=False, ):
     conn = sq.connect(dbname)
     df = pd.read_sql_query('SELECT * FROM COMPUTATIONALDATA', conn)
     df = df.dropna()
-
+    conn.close()
     if adddummies:
         df['NATUREDUMMIES'] = df['NATURE'].map(
             {1: 'D', 2: 'd', 3: 'I', 4: 'i'})
@@ -210,27 +218,41 @@ def DropCommonDataPreviousDataBase(dbname, UnqueDB):
 
     return df, UnqueDB.drop(FindCommonIndex)
 
-def DumpModelAccuracyData(LoopIndex,model_accuracy,conn,TrainEgOnly=True,\
+# def DumpModelAccuracyData(LoopIndex,model_accuracy,conn,TrainEgOnly=True,\
+#                           TrainNatureOnly=False,TrainEgNature=False,SVRdependentSVC=False):
+#     if TrainEgOnly or TrainNatureOnly or (TrainEgNature and SVRdependentSVC):
+#         model_accuracy['LoopIndex'] = LoopIndex
+#         pd.DataFrame([model_accuracy]).to_sql("ModelAccuracy", conn, index=False,if_exists='append') 
+#     else:
+#         model_accuracy[0]['LoopIndex'] = LoopIndex
+#         pd.DataFrame([model_accuracy[0]]).to_sql("ModelAccuracy", conn, index=False,if_exists='append')
+#         model_accuracy[1]['LoopIndex'] = LoopIndex
+#         pd.DataFrame([model_accuracy[1]]).to_sql("NatureModelAccuracy", conn, index=False,if_exists='append')
+#     return
+def DumpModelAccuracyData(LoopIndex,SetSize,model_accuracy,conn,TrainEgOnly=True,\
                           TrainNatureOnly=False,TrainEgNature=False,SVRdependentSVC=False):
     if TrainEgOnly or TrainNatureOnly or (TrainEgNature and SVRdependentSVC):
         model_accuracy['LoopIndex'] = LoopIndex
-        pd.DataFrame([model_accuracy]).to_sql("ModelAccuracy", conn, index=False,if_exists='append') 
+        model_accuracy['TrainingSamleCount'] = SetSize
+        pd.DataFrame(model_accuracy).to_sql("ModelAccuracy", conn, index=True,if_exists='append') 
     else:
         model_accuracy[0]['LoopIndex'] = LoopIndex
-        pd.DataFrame([model_accuracy[0]]).to_sql("ModelAccuracy", conn, index=False,if_exists='append')
+        model_accuracy[0]['TrainingSamleCount'] = SetSize
+        pd.DataFrame(model_accuracy[0]).to_sql("ModelAccuracy", conn, index=True,if_exists='append')
         model_accuracy[1]['LoopIndex'] = LoopIndex
-        pd.DataFrame([model_accuracy[1]]).to_sql("NatureModelAccuracy", conn, index=False,if_exists='append')
+        model_accuracy[1]['TrainingSamleCount'] = SetSize
+        pd.DataFrame(model_accuracy[1]).to_sql("NatureModelAccuracy", conn, index=True,if_exists='append')
     return
 
 def GenerateBadSamples(PredictOvernSamples,BadSamplesCondition,conn,XFEATURES,
                        ntry_max,LoopIndex,nature_accuracy_cutoff,natoms=216,
                        LoopNonConvergenceCondition5=False,TrainingReachedAccuracy=False,
-                       SVRdependentSVC=False,SVRSVCmodel=False,SVRModel=False):
+                       SVRdependentSVC=False,SVRSVCmodel=False,SVRModel=False,
+                       TakeFracBadSamples=0.05):
     if LoopNonConvergenceCondition5: # Loop convergence condition 5
         TestPickRandomConfiguration = PredictOvernSamples[(BadSamplesCondition).values].reset_index(drop=True)
-        ##### Take only 40% of total wrong samples. Don't need the all wrong samples to learn from.
-        ##### If even 40% is really high, pick maximum of 100 samples.
-        GetFrac = min(0.40, 100/len(TestPickRandomConfiguration))
+        GetFrac = min(TakeFracBadSamples, 100/len(TestPickRandomConfiguration))
+        print(f"Note: Only {GetFrac*100:.2f}% of the bad samples will be added to the feed-back batch.")
         ntry = 0
         dff = pd.read_sql_query('SELECT * FROM TotalBatchs', conn)
         while True:
@@ -278,10 +300,10 @@ def GenerateBadSamples(PredictOvernSamples,BadSamplesCondition,conn,XFEATURES,
     else:
         if SVRSVCmodel:
             if SVRdependentSVC:
-                print(f'\n* MAE (over samples) of bandgap magnitude prediction (mean over models) reached cutoff={nature_accuracy_cutoff} eV')
+                print(f'\n* RMSE (over samples) of bandgap magnitude prediction (mean over models) reached cutoff={nature_accuracy_cutoff} eV')
                 print('* Training complete. As the model is SVRdependentSVC, training depends only on SVR. Exiting AL loop.') 
             else:
-                print(f' - MAE (over samples) of bandgap magnitude prediction (mean over models) reached cutoff={nature_accuracy_cutoff} eV')
+                print(f' - RMSE (over samples) of bandgap magnitude prediction (mean over models) reached cutoff={nature_accuracy_cutoff} eV')
 
         else:
             extra_txt = 'magnitude' if SVRModel else 'nature'
@@ -292,11 +314,10 @@ def GenerateBadSamples(PredictOvernSamples,BadSamplesCondition,conn,XFEATURES,
 
 def GenerateBadSamples_SVRSVC(PredictOvernSamples,BadSamplesCondition,conn,XFEATURES,
                               PickRandomConfigurationAtom_svr,TestPickRandomConfiguration_svr,ntry_max,LoopIndex,natoms=216,
-                              TrainingReachedAccuracy=False):
+                              TrainingReachedAccuracy=False,TakeFracBadSamples=0.05):
     TestPickRandomConfiguration = PredictOvernSamples[(BadSamplesCondition).values].reset_index(drop=True)
-    ##### Take only 40% of total wrong samples. Don't need the all wrong samples to learn from.
-    ##### If even 40% is really high, pick maximum of 100 samples.
-    GetFrac = min(0.40, 100/len(TestPickRandomConfiguration))
+    GetFrac = min(TakeFracBadSamples, 100/len(TestPickRandomConfiguration))
+    print(f"Note: Only {GetFrac*100:.2f}% of the bad samples will be added to the feed-back batch.")
     ntry = 0
     dff_ = pd.read_sql_query('SELECT * FROM TotalBatchs', conn)
     ##### Drop duplicates from SVR chossen bad samples
@@ -404,8 +425,12 @@ def HeaderDecorator():
     """
     now = datetime.now()
     BPD_header('BANDGAP     PHASE    DIAGRAM')
-    print(f"{' '*64} Date: {now.strftime('%Y-%m-%d  %H:%M:%S')}\n")
+    print(f"{now.strftime('%Y-%m-%d  %H:%M:%S'):^151}\n")
+    print(f"{'Welcome to Active Learning':^151}")
+    print(f"{'The code was written by Badal Mondal as a part of the PhD project.':^151}")
+    print(f"{'More details can be found here:':^151}")
     return 
+
 def ParserOptions():
     """
     This finction defines the parsers.

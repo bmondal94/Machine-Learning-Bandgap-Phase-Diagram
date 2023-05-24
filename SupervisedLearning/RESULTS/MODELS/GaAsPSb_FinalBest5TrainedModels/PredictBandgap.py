@@ -11,13 +11,13 @@ import pandas as pd
 import glob, os, sys
 
 #%%
-df = input("Write the composition and strain values in this order: PHOSPHORUS, ARSENIC,  STRAIN. \n(e.g. 50,50,-5 for 5% compressive biaxially strained Ga100P50As45Sb5)\n")
+df = input("Write the composition and strain values in this order: PHOSPHORUS, ARSENIC,  STRAIN. \n(e.g. 50,45,-5 for 5% compressive biaxially strained Ga100P50As45Sb5)\n")
 # df='50,50,1'
 dff = np.array(df.split(','), dtype=float)
 if len(dff)<3:
     print("Error: Must supply 3 comma separated values.")
     sys.exit()
-if sum(dff[:2])>=100:
+if sum(dff[:2])>100:
     print('Error: Total composition can not greater than 100.')
     sys.exit()
 dff = np.insert(dff,1,100-sum(dff[:2]))

@@ -20,8 +20,6 @@ import scipy.interpolate as inpr
 
 import MLmodelGeneralFunctions as mlgf
 import MLmodelGeneralPlottingFunctions as mlgpf
-
-
 import MLmodelSVMFunctions as mlmf
 
 np.set_printoptions(precision=3, suppress=True)
@@ -42,7 +40,7 @@ print(f"Start: {datetime.today()}")
 #### Data
 cwd = os.getcwd()
 dirpath = f'{cwd}/../'
-dbname = dirpath+'/DataBase/GaPAsSb_ML_database.xlsx'
+dbname = dirpath+'/DATAbase/GaAsPSb_ML_database.xlsx'
 BinaryConversion=True # Convert text to number ==> 1: Direct, 0: Indirect
 UseVegardsLaw = True # <== Use vegards law for equilibrium lattice parameter calculations
 
@@ -60,10 +58,10 @@ Plot_Ternary_Figs = False #<== Plot ternary plots. Require 'ternary' package
 DrawHtmls = False # <== Create htmls. Require bokeh, holoviews
 if Plot_Ternary_Figs: 
     import MLmodelPlottingFunctions as mlpf
-    DrawHtmls = False; createmovie = False; Disable3dFigsGrawing = True 
-if DrawHtmls:
-    import MLmodelWebPlottingFunctions as mlwpf
-    import MLmodelWebPlottingFunctionsPart2 as mlwpfP2
+    # DrawHtmls = False; createmovie = False; Disable3dFigsGrawing = True 
+    if DrawHtmls:
+        import MLmodelWebPlottingFunctions as mlwpf
+        import MLmodelWebPlottingFunctionsPart2 as mlwpfP2
 
 #%% ------------------------- Load database -----------------------------------
 df, points = mlgf.CreateDataForModel(dbname, ReturnPredictPoints=False,BinaryConversion=BinaryConversion)
@@ -191,7 +189,6 @@ if retrain_models:
 
 #sys.exit()
 #%% ===================== Postprocessing ======================================
-#### If retrain_models=True the plotting are automatic there. Don't need to run this block.
 for XYZ in ['BTQ']: # ,'BTq_ct','Qbt_ct']:
     filename = f"{dirpathSystem}/TEST_{XYZ}" 
     outnamelist = [name for name in os.listdir(filename+'/MODELS/')]
@@ -199,7 +196,7 @@ for XYZ in ['BTQ']: # ,'BTq_ct','Qbt_ct']:
     for fname in outnamelist:
         SaveFigPathTmp = filename+'/Figs/'+fname
         OutdataFrame = mlgf.ReadOutputTxtFile(filename+'/MODELS/'+fname+'/output.txt')
-        if fname == 'BTQ':
+        if XYZ == 'BTQ':
             SearchBPDTrials = glob.glob(f"{filename}/BPD/*/MODELS/{fname}/output.txt")
             LastPointData = [OutdataFrame]
             for OutPutTxtFile in SearchBPDTrials:
@@ -209,7 +206,34 @@ for XYZ in ['BTQ']: # ,'BTq_ct','Qbt_ct']:
         # _ = mlgpf.PlotPostProcessingDataSetSize(OutdataFrame,save=True,savepath=SaveFigPathTmp)
         _ = mlgpf.PlotPostProcessingDataSetSizeLogLog(OutdataFrame,save=True,savepath=SaveFigPathTmp)
         # _ = mlgpf.PlotPostProcessingDataSetSizeLogLog_v2(OutdataFrame,save=True,savepath=SaveFigPathTmp)
-
+#%% ================ Creating data for TABLE 1 in main manuscript =============
+filename = f"{dirpathSystem}/TEST_BTQ" 
+Outdata_lastFrame = {}
+for fname in ['my_rmse_fix', 'accuracy']:
+    SearchBPDTrials = glob.glob(f"{filename}/BPD/*/MODELS/{fname}/output.txt")
+    LastPointData = []
+    for OutPutTxtFile in SearchBPDTrials:
+        LastPointData.append(mlgf.ReadOutputTxtFile_TABLE(OutPutTxtFile))  
+    Outdata_lastFrame[fname] = pd.concat(LastPointData, axis=0)
+    
+ProjectionDict = {'set1':{'root_mean_squared_error':'RMSE (meV)',
+                  'mean_absolute_error':'MAE (meV)',
+                  'max_error':'Max error (meV)'},
+                  'set2':{'r2_score':'R2',
+                  'accuracy_score':'Accuracy score',
+                  'balanced_accuracy_score': 'Balanced accuracy score'}}
+for II in Outdata_lastFrame:
+    print('----'+II+'----')
+    TMPDICT1 = Outdata_lastFrame[II].mean(numeric_only=True)
+    TMPDICT2 = Outdata_lastFrame[II].std(numeric_only=True)
+    for sett in ProjectionDict:
+        for KK in ProjectionDict[sett]:
+            kkk = f"out-of-sample_{KK}"
+            if sett == 'set1':
+                print(f"{ProjectionDict[sett][KK]} = {int(TMPDICT1[kkk])}({int(TMPDICT2[kkk])})")
+            else:
+                print(f"{ProjectionDict[sett][KK]} = {TMPDICT1[kkk]:.2f}({TMPDICT2[kkk]:.2f})")
+print('****************')
 #%%%********** Load model and predictions *************************************
 #%%%%---------------- Load models ---------------------------------------------
 LoadSVMFinalBPD = f'{dirpathSystem}'
@@ -603,15 +627,14 @@ if Plot_Ternary_Figs:
             fig3d, ax3d = mlpf.Plot3DBandgapTernary(Sub_Predictions[SubstrateName]['ARSENIC'], Sub_Predictions[SubstrateName]['ANTIMONY'], 
                                                     SubstrateStrainValues,SubstrateStrainValues,
                                                     titletxt=None, cbar_txt=f'Strain(%) [{SubstrateName} substrate]',
-                                                    textt=['GaP','GaAs','GaSb'], scale=100, ax=ax3d, fig=fig3d) 
-#%%%********************* Plot Bandgaps ***************************************
-#%%%%....................... 3D scatter plot bandgap ..........................
-if not Disable3dFigsGrawing:
-    pp = pd.concat(Predictions.values()).reset_index(drop=True)
-    _ = mlpf.Plot3DBandgapTernary(pp['ARSENIC'], pp['ANTIMONY'], pp['STRAIN'], pp['bandgap'],textt=textt, scale=100) 
+                                                        textt=['GaP','GaAs','GaSb'], scale=100, ax=ax3d, fig=fig3d) 
+    #%%%********************* Plot Bandgaps ***************************************
+    #%%%%....................... 3D scatter plot bandgap ..........................
+    if not Disable3dFigsGrawing:
+        pp = pd.concat(Predictions.values()).reset_index(drop=True)
+        _ = mlpf.Plot3DBandgapTernary(pp['ARSENIC'], pp['ANTIMONY'], pp['STRAIN'], pp['bandgap'],textt=textt, scale=100) 
 
 #%%
-if Plot_Ternary_Figs:
     BandGapNatureHeatmap = 0
     OnlyContours = 0
     if BandGapNatureHeatmap:
@@ -710,83 +733,82 @@ if Plot_Ternary_Figs:
     _ = mlpf.DrawAllContour(CONTOURS_best_model,fname=SaveFigPath+'/AllContours_best_model.svg', titletext=None,
                             axislabels = axislabels,cbarpos='bottom',
                             savefig=1, scale=100, vmin=StrainMin, vmax=StrainMax,
-                            cmap=plt.cm.get_cmap('viridis'))
-#%%%------------------------ Create movie from snapshots ----------------------
-
-if createmovie:
-    images = []
-    imgs = sorted(glob.glob(SaveMoviePath+"conf*.png"))
-    for I in imgs[50:]: #compressive=[50::-1], tensile=[50:]
-        #print(I)
-        images.append(plt.imread(I))
-    _ = mlpf.MakeEgStrainSnapShotMovie(images, movdirname=SaveMoviePath, savefig = 1)
-
-#%%++++++++++++++++++++++++ Draw for html +++++++++++++++++++++++++++++++++++++
-if DrawHtmls:
-    webdirname = SaveHTMLPath + '/'
-    # os.mkdir(webdirname)
-    AxisLabels = ['GaP','GaSb','GaAs'] # Bottom, right, left
-    cbarlabel='Strain(%)'
-    #%%% ---------------- Draw Bandgap ( + nature contours) -----------------------
-    #%%%%.............. Draw heatmaps (+contours) with slider in html .............
-    fname = webdirname + 'BandgGapHeatMap.html'
-    # TestPredictions = {XX[0]:XX[1] for XX in list(Predictions.items())[:3]}
-    # _ = mlwpfP2.DrawBandgapHeatmapWebSlider(TestPredictions, ["PHOSPHORUS",'ANTIMONY','bandgap'], [cnt, cnt, anticnt], StrainArray, 
-    #                                         ContourText=['DIRECT','INDIRECT'],
-    #                                         fname=fname, titletext=None,
-    #                                         savefig=1, step=10,
-    #                                         cmappp="viridis",color='black', 
-    #                                         line_width=4, text=AxisLabels,
-    #                                         scale=100,vmin=0, vmax=2.5, cbarlabel='Bandgap value (eV)'
-    #                                         )
-    # TestPredictions = {XX[0]:XX[1] for XX in list(Predictions.items())[:]}
-    _ = mlwpfP2.DrawBandgapHeatmapWebV2Slider(Predictions, ["PHOSPHORUS",'ANTIMONY','bandgap'], [cnt, cnt, anticnt],  
-                                            ContourText=['DIRECT','INDIRECT'],
-                                            fname=fname, titletext=None,
-                                            savefig=1, step=10,page_title='GaAsPSb Bandgap phase diagram',
-                                            cmappp="viridis",color='black', 
-                                            line_width=4, text=AxisLabels,
-                                            scale=100,vmin=0, vmax=2.5, cbarlabel='Bandgap value (eV)'
-                                            )
-    #%%% ----------------------- Draw Bandgap Nature contours -----------------
-    #####.............. Draw all contours with slider in html .................
-    #####........ Draw all contours with Multi Select in html..................
-    fname = webdirname + 'MergeLayoutsAllContourV2.html'
-    sliderlayoutv2 = mlwpf.DrawAllContourWebSliderV2([cnt, cnt, anticnt], StrainArray, CoverPage=CONTOURS,
-                                                     ContourText=['DIRECT','INDIRECT'],
-                                                     IntializeContourText='', 
-                                                     savefig=0, scale=100, vmin=StrainMin, vmax=StrainMax,fname=fname,
-                                                     step=10,text=AxisLabels,cbarlabel=cbarlabel)
-    multiselectlayoutv2 = mlwpf.DrawAllContourWebMultiSelectV2([cnt, cnt, anticnt], StrainArray, CoverPage=CONTOURS,
-                                                               ContourText=['DIRECT','INDIRECT'],
-                                                               IntializeContourText='',
-                                                               savefig=0, scale=100, vmin=StrainMin, vmax=StrainMax,fname=fname,
-                                                               step=10,text=AxisLabels,cbarlabel=cbarlabel)
+                                cmap=plt.cm.get_cmap('viridis'))
+    #%%%------------------------ Create movie from snapshots ----------------------
+    if createmovie:
+        images = []
+        imgs = sorted(glob.glob(SaveMoviePath+"conf*.png"))
+        for I in imgs[50:]: #compressive=[50::-1], tensile=[50:]
+            #print(I)
+            images.append(plt.imread(I))
+        _ = mlpf.MakeEgStrainSnapShotMovie(images, movdirname=SaveMoviePath, savefig = 1)
     
-    layoutlistv2=[sliderlayoutv2,multiselectlayoutv2]
-    mlwpf.MergeSliderSelect(layoutlistv2,fname=fname)
+    #%%++++++++++++++++++++++++ Draw for html +++++++++++++++++++++++++++++++++++++
+    if DrawHtmls:
+        webdirname = SaveHTMLPath + '/'
+        # os.mkdir(webdirname)
+        AxisLabels = ['GaP','GaSb','GaAs'] # Bottom, right, left
+        cbarlabel='Strain(%)'
+        #%%% ---------------- Draw Bandgap ( + nature contours) -----------------------
+        #%%%%.............. Draw heatmaps (+contours) with slider in html .............
+        fname = webdirname + 'BandgGapHeatMap.html'
+        # TestPredictions = {XX[0]:XX[1] for XX in list(Predictions.items())[:3]}
+        # _ = mlwpfP2.DrawBandgapHeatmapWebSlider(TestPredictions, ["PHOSPHORUS",'ANTIMONY','bandgap'], [cnt, cnt, anticnt], StrainArray, 
+        #                                         ContourText=['DIRECT','INDIRECT'],
+        #                                         fname=fname, titletext=None,
+        #                                         savefig=1, step=10,
+        #                                         cmappp="viridis",color='black', 
+        #                                         line_width=4, text=AxisLabels,
+        #                                         scale=100,vmin=0, vmax=2.5, cbarlabel='Bandgap value (eV)'
+        #                                         )
+        # TestPredictions = {XX[0]:XX[1] for XX in list(Predictions.items())[:]}
+        _ = mlwpfP2.DrawBandgapHeatmapWebV2Slider(Predictions, ["PHOSPHORUS",'ANTIMONY','bandgap'], [cnt, cnt, anticnt],  
+                                                ContourText=['DIRECT','INDIRECT'],
+                                                fname=fname, titletext=None,
+                                                savefig=1, step=10,page_title='GaAsPSb Bandgap phase diagram',
+                                                cmappp="viridis",color='black', 
+                                                line_width=4, text=AxisLabels,
+                                                scale=100,vmin=0, vmax=2.5, cbarlabel='Bandgap value (eV)'
+                                                )
+        #%%% ----------------------- Draw Bandgap Nature contours -----------------
+        #####.............. Draw all contours with slider in html .................
+        #####........ Draw all contours with Multi Select in html..................
+        fname = webdirname + 'MergeLayoutsAllContourV2.html'
+        sliderlayoutv2 = mlwpf.DrawAllContourWebSliderV2([cnt, cnt, anticnt], StrainArray, CoverPage=CONTOURS,
+                                                         ContourText=['DIRECT','INDIRECT'],
+                                                         IntializeContourText='', 
+                                                         savefig=0, scale=100, vmin=StrainMin, vmax=StrainMax,fname=fname,
+                                                         step=10,text=AxisLabels,cbarlabel=cbarlabel)
+        multiselectlayoutv2 = mlwpf.DrawAllContourWebMultiSelectV2([cnt, cnt, anticnt], StrainArray, CoverPage=CONTOURS,
+                                                                   ContourText=['DIRECT','INDIRECT'],
+                                                                   IntializeContourText='',
+                                                                   savefig=0, scale=100, vmin=StrainMin, vmax=StrainMax,fname=fname,
+                                                                   step=10,text=AxisLabels,cbarlabel=cbarlabel)
+        
+        layoutlistv2=[sliderlayoutv2,multiselectlayoutv2]
+        mlwpf.MergeSliderSelect(layoutlistv2,fname=fname)
+        
+        #%%%%............... Draw 3D scatter plot DITs ................................
+        fname = webdirname + "Contour3D.html"
+        mlwpf.DrawAllContour3D(CONTOURS, StrainArray, fname=fname)
     
-    #%%%%............... Draw 3D scatter plot DITs ................................
-    fname = webdirname + "Contour3D.html"
-    mlwpf.DrawAllContour3D(CONTOURS, StrainArray, fname=fname)
-
-    #%%%%.. Draw substrate heatmaps (+contours) with slider in html ...........
-    _ = mlwpfP2.DrawBandgapHeatmapWebV2Slider(Sub_Predictions, 
-                                              ["PHOSPHORUS",'ANTIMONY','bandgap'], [Sub_cnt, Sub_cnt, Sub_anticnt], 
-                                              ContourText=['DIRECT','INDIRECT'],fname=f"{webdirname}/SubstrateEffectHeatMap_Bandgap.html",
-                                              titletext=None,DrawNatureContours=False,
-                                              savefig=1, step=10,page_title='GaAsPSb Bandgap phase diagram substrate effect',
-                                              cmappp="viridis",color='black', 
-                                              line_width=4, text=AxisLabels,SelectionText='Substrate:',
-                                              scale=100,vmin=0, vmax=2.5, cbarlabel='Bandgap value (eV)'
-                                              )
-    _ = mlwpfP2.DrawBandgapHeatmapWebV2Slider(Sub_Predictions, 
-                                              ["PHOSPHORUS",'ANTIMONY','STRAIN'], None,
-                                              fname=f"{webdirname}/SubstrateEffectHeatMap_Strain.html", 
-                                              DrawNatureContours=False,
-                                              savefig=1, step=10,page_title='GaAsPSb Bandgap phase diagram substrate effect',
-                                              cmappp="viridis",color='black', TOOLTIPS_z_txt='Strain', TOOLTIPS_z_txt_unit='%',
-                                              line_width=4, text=AxisLabels,SelectionText='Substrate:',
-                                              scale=100,vmin=0, vmax=2.5, cbarlabel='Strain (%)'
-                                              )
+        #%%%%.. Draw substrate heatmaps (+contours) with slider in html ...........
+        _ = mlwpfP2.DrawBandgapHeatmapWebV2Slider(Sub_Predictions, 
+                                                  ["PHOSPHORUS",'ANTIMONY','bandgap'], [Sub_cnt, Sub_cnt, Sub_anticnt], 
+                                                  ContourText=['DIRECT','INDIRECT'],fname=f"{webdirname}/SubstrateEffectHeatMap_Bandgap.html",
+                                                  titletext=None,DrawNatureContours=False,
+                                                  savefig=1, step=10,page_title='GaAsPSb Bandgap phase diagram substrate effect',
+                                                  cmappp="viridis",color='black', 
+                                                  line_width=4, text=AxisLabels,SelectionText='Substrate:',
+                                                  scale=100,vmin=0, vmax=2.5, cbarlabel='Bandgap value (eV)'
+                                                  )
+        _ = mlwpfP2.DrawBandgapHeatmapWebV2Slider(Sub_Predictions, 
+                                                  ["PHOSPHORUS",'ANTIMONY','STRAIN'], None,
+                                                  fname=f"{webdirname}/SubstrateEffectHeatMap_Strain.html", 
+                                                  DrawNatureContours=False,
+                                                  savefig=1, step=10,page_title='GaAsPSb Bandgap phase diagram substrate effect',
+                                                  cmappp="viridis",color='black', TOOLTIPS_z_txt='Strain', TOOLTIPS_z_txt_unit='%',
+                                                  line_width=4, text=AxisLabels,SelectionText='Substrate:',
+                                                  scale=100,vmin=0, vmax=2.5, cbarlabel='Strain (%)'
+                                                  )
 print(f"End: {datetime.today()}")

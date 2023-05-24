@@ -1,0 +1,77 @@
+Programming language: python 3.9
+Required python packages:
+	glob
+	os
+	sys
+	shutil
+	datetime
+	random
+	time
+	contextlib
+	scikit-learn 1.0.2
+	numpy 1.21.5
+	scipy 1.7.3
+	sqlite3
+	pickel
+	pandas 1.5.0
+	matplotlib 3.6.0
+	
+Required python packages for extra plotting (optional):
+	ternary 1.0.8
+	bokeh
+	holoviews
+	
+Note: The exact version of the above python packages were used in the production run of the manuscript.
+
+Accronym:
+	my_rmse_fix: the predicted negative bandgap values are converted to zero.
+	my_rmse_abs: the predicted negative bandgap values are converted to positive value (absolute value).
+
+Approximate runtime:	
+	Machine: x86_64, 6 core, Intel(R) Core(TM) i5-9500 CPU @ 3.00GHz
+	Warning: By default during hyperparater optimization all the available core will be used. Parallelized with joblib (https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.RandomizedSearchCV.html). Change this value inside mysvrmodel_parametersearch() function in MLmodelSVMFunctions.py if required.
+	Runtime: ~ 24 hrs.
+	
+Speed up tips: 
+	1. Change 'n_iter_tmp' value inside mysvrmodel_parametersearch() function in MLmodelSVMFunctions.py to smaller value (e.g. 100). This variable sets how many RandomSearch points will be performed.
+	
+Troubleshooting: 
+	1. Decrease the tolerance value 1E-3 in SVM model definition if the hyperparameter optimization get stuck for some value of hyperparameters.
+	
+Compilation::
+	Step 1: go to 'scripts' diretcory	
+	setp 2: set the database path ('dbname' variable) appropriately.				
+	Step 3: Run command>>> python MachineLearning_ternary.py
+
+Folders descriptions: 	
+	'DataBase' --> contails the data base
+	'scripts'  --> contains all scripts
+	'RESULTS'  --> contains all results after running below Step 3.
+		
+	'RESULTS/TEST_BTQ' --> results of model training with complete binary-ternary-quaternary dataset
+	'RESULTS/TEST_BTQ/BPD' --> results of GaAsPSb bandgap phase diagram
+	'RESULTS/TEST_BTQ/Figs' --> figures of learning curve
+	'RESULTS/TEST_BTQ/MODELS' --> output files of learning curve
+	'RESULTS/TEST_BTQ/MOVIE' --> ignore
+	
+	'RESULTS/TEST_BTQ/BPD/Trial*' --> results of 5 trials (last points in Fig. 1 of manuscript)
+	'RESULTS/TEST_BTQ/BPD/Trial*/MODELS' --> results of 5 trials --> output file and trained model
+	'RESULTS/TEST_BTQ/BPD/Trial*/Figs' --> results of 5 trials --> figures, hyperparameter optimizations figs
+	'RESULTS/TEST_BTQ/BPD/Trial*/Data' --> results of 5 trials --> data saved (hyperparameters, test set)
+	'RESULTS/TEST_BTQ/BPD/Trial*/MOVIE' --> ignore
+	
+	'RESULTS/TEST_BTQ/BPD/PostProcessingFigs' --> some post-processed bandgap phase diagram figures 
+	'RESULTS/TEST_BTQ/BPD/PostProcessingFigs/Figs' --> post-processed bandgap phase diagram figures
+	'RESULTS/TEST_BTQ/BPD/PostProcessingFigs/HTML' --> generated HTML files bandgap phase diagram figures
+	'RESULTS/TEST_BTQ/BPD/PostProcessingFigs/MOVIE' --> bandgap phase diagram strain snapshots
+	'RESULTS/TEST_BTQ/BPD/PostProcessingFigs/SubstrateEffect' --> bandgap phase diagram of substrate effects
+	'RESULTS/TEST_BTQ/BPD/PostProcessingFigs/beastModel.txt' --> best of above 5 trials
+	
+	'RESULTS/TEST_BTQ/*/accuracy' --> results of learning curve of SVC-RBF model with hyperpameter scoring function is'accuracy-score'
+	'RESULTS/TEST_BTQ/*/balanced_accuracy' --> results of learning curve of SVC-RBF model with hyperpameter scoring function is'balanced_accuracy-score'
+	'RESULTS/TEST_BTQ/*/neg_root_mean_squared_error' --> results of learning curve of SVR-RBF model with hyperpameter scoring function is'neg_root_mean_squared_error'
+	'RESULTS/TEST_BTQ/*/my_rmse_abs' --> results of learning curve of SVR-RBF model with hyperpameter scoring function is'neg_root_mean_squared_error' but the predicted negative bandgap values are converted to positive value
+	'RESULTS/TEST_BTQ/*/my_rmse_fix' --> results of learning curve of SVR-RBF model with hyperpameter scoring function is'neg_root_mean_squared_error' but the predicted negative bandgap values are converted to zero
+	'RESULTS/TEST_BTQ/*/r2' --> results of learning curve of SVR-RBF model with hyperpameter scoring function is'r2'
+	
+Note: The results such as optimized hyperparameters of current training may differ slightly from the results given in the manuscript. This is because of randomization in several parts/routines of the code (such as RandomSearchedCV, train-test split, ShuffleSplit). We did not constrain the splitting by specifying seed or random_state.

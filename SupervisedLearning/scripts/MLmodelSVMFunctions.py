@@ -147,19 +147,23 @@ def PlotCV_results(svrgrid, paramss, scoringfn_tmp, SVRgridparameters_c, SVRgrid
     results = pd.DataFrame(svrgrid.cv_results_)
     # print(svrgrid.cv_results_)
     # print(results)
-    
+    # marker='o'
+    markersize = plt.rcParams['lines.markersize']**2
     for III in paramss:
         if '_gamma' in III: 
             indexname = 'param_' + III
         elif '_C' in III:
             colname = 'param_' + III
+        elif '_epsilon' in III:
+            markersize = 100*np.log1p(results['param_' + III].astype(np.float64))
             
     if isinstance(scoringfn_tmp,str): scoringfn_tmp=('score',)
     for I in scoringfn_tmp:
         results[[colname,indexname]] = results[[colname,indexname]].astype(np.float64)
         
         fig, ax = plt.subplots()
-        im = ax.scatter(results[colname], results[indexname], c= results[f"mean_test_{I}"])
+        im = ax.scatter(results[colname], results[indexname], c= results[f"mean_test_{I}"],s=markersize,
+                        cmap='Reds',marker='o',edgecolor='k',linewidths=0.25)
     
         ax.set_ylabel("$\gamma$")
         ax.set_xlabel("C")
@@ -227,7 +231,7 @@ def plot_err_dist(XX, YY, text=None,data_unit_label='eV',save=False, savepath='.
     # Check error distribution
     plt.subplot()
     plt.title(text)
-    error = YY - XX
+    error = XX - YY
     plt.hist(error, bins=nbins)
     plt.xlabel(f'Prediction error ({data_unit_label})')
     plt.ylabel('Count (arb.)')
@@ -242,10 +246,12 @@ def plot_err_dist(XX, YY, text=None,data_unit_label='eV',save=False, savepath='.
 
 def PlotConfusionMatrix(y_testt, y_predictt, display_labels,save=False,savepath='.',figname='TestSet.png'):
     cm = confusion_matrix(y_testt, y_predictt)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm,display_labels=display_labels)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm.T,display_labels=display_labels)
     disp = UpdateConfuxionMatrixDisplay(disp)
     disp.ax_.tick_params(axis='both',which='major',length=10,width=2)
     disp.ax_.tick_params(axis='both',which='minor',length=6,width=2)
+    disp.ax_.set_xlabel("True label")
+    disp.ax_.set_ylabel("Predicted label")
     if save:
         disp.figure_.savefig(savepath+figname,bbox_inches = 'tight',dpi=300)
         plt.close()   
@@ -550,6 +556,7 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
         # gamma_range = np.logspace(-2, 2, 5)
         C_range = [1e0, 1e1, 50, 1e2, 500, 1e3]
         gamma_range = [1.e-02, 5.e-02, 1.e-01, 5.e-01, 1.e+00, 5.e+00, 1.e+01]
+        epsilon_range = [0,0.05,0.1,0.15,0.2]
         # C_range = stats.loguniform.rvs(1.0e-02, 1.0e+03, size=20)
         # gamma_range = stats.loguniform.rvs(1.e-02, 1.e+01, size=20)
     else:
@@ -557,16 +564,22 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
         # gamma_range = stats.uniform(1.e-06, 1.e-03)
         C_range = stats.loguniform(1.0e-02, 1.0e+03)
         gamma_range = stats.loguniform(1.e-02, 1.e+01)
+        epsilon_range = stats.loguniform(1.e-02, 1.e+00)
         n_iter_tmp = 1000 # How many total random combinations
     
     param_grid={"svm__C": C_range, 
                 "svm__gamma": gamma_range}
+    if not SVCclassification:
+        param_grid['svm__epsilon'] = epsilon_range
+        
     if multiregression:
         param_grid['svm__estimator__C'] = param_grid.pop('svm__C')
         param_grid['svm__estimator__gamma'] = param_grid.pop("svm__gamma")
+        param_grid['svm__estimator__epsilon'] = param_grid.pop("svm__epsilon")   
     elif regressorchain:
         param_grid['svm__base_estimator__C'] = param_grid.pop('svm__C')
         param_grid['svm__base_estimator__gamma'] = param_grid.pop("svm__gamma")
+        param_grid['svm__base_estimator__epsilon'] = param_grid.pop("svm__epsilon")
     else:
         pass
 
@@ -577,7 +590,7 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
                                cv = CrossValidationFold,
                                scoring = scoringfn,
                                n_jobs=njobs,
-                               refit=False)
+                               refit=False,verbose=2)
     else:
         print(f"\t Hyperparameter optimization with RandomizedSearchCV ({CrossValidationFold}-fold CV).")
         svmgrid = RandomizedSearchCV(estimator=pipe,
@@ -659,7 +672,7 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
                 if SVRdependentSVC:
                     print("*"*75)
                     print('The SVR prediction using the optimized hyperparameters from SVC (SVCdependentSVR)::')
-                    SVREgModel = SVR(kernel="rbf",tol= 1e-5,cache_size=10000)
+                    SVREgModel = SVR(kernel="rbf",tol= 1e-5,cache_size=10000,epsilon=0.02)
                     svr_pipe = Pipeline(steps=[("scaler", StandardScaler()), ("svm", SVREgModel)])
                     svr_pipe.set_params(**best_params_)
                     svr_pipe.fit(X_train, y_train_SVRSVC)
@@ -691,7 +704,12 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
                     print('The SVC prediction using the optimized hyperparameters from SVR (SVRdependentSVC)::')
                     SVCEgNatureModel = SVC(kernel="rbf",tol= 1e-5,cache_size=10000)
                     svc_pipe = Pipeline(steps=[("scaler", StandardScaler()), ("svm", SVCEgNatureModel)])
-                    svc_pipe.set_params(**best_params_)
+                    TMP_BEST_PARAMS = best_params_.copy()
+                    KK = list(TMP_BEST_PARAMS.keys())
+                    for k in KK:
+                        if 'epsilon' in k:
+                            TMP_BEST_PARAMS.pop(k)
+                    svc_pipe.set_params(**TMP_BEST_PARAMS)
                     svc_pipe.fit(X_train, y_train_SVRSVC)
                     y_svc = svc_pipe.predict(X_test)
                     y_svc_all = svc_pipe.predict(x_all_SVRSVC)

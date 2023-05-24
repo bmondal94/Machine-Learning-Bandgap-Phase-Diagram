@@ -12,7 +12,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score, KFold, cross_validate
 from sklearn.multioutput import MultiOutputRegressor, RegressorChain
-from sklearn.metrics import r2_score, mean_squared_error, classification_report, \
+from sklearn.metrics import r2_score, mean_squared_error, classification_report, make_scorer,\
     accuracy_score, balanced_accuracy_score, confusion_matrix, ConfusionMatrixDisplay, mean_absolute_error,max_error
     
 from ActiveLearningGeneralFunctions import GenerateBadSamples, GenerateBadSamples_SVRSVC
@@ -21,6 +21,8 @@ import inspect, pickle
 import matplotlib.pyplot as plt
 import pandas as pd
 import sqlite3 as sq
+import sys
+ 
 #%% ###########################################################################
 def CalculateAccuracyFromLabels(y_prediction_whole_space,PredictProb=False):
     '''
@@ -85,7 +87,7 @@ def define_default_model(SVRModel=False,SVCmodel=False,PredictProb=False):
 def ModelParameterGrid():
     # Parameters of pipelines can be set using ‘__’ separated parameter names:
     C_range = [1e0, 1e1, 50, 1e2, 500, 1e3]
-    gamma_range = [1.e-03, 1.e-02, 1.e-01, 1.e+00, 1.e+01, 5.e+01, 1.e+02] #np.logspace(-2, 2, 5)
+    gamma_range = [1.e-02, 5.e-02, 1.e-01, 5.e-01, 1.e+00, 5.e+00, 1.e+01]
     param_grid={"svm__C": C_range, 
                 "svm__gamma": gamma_range}
     
@@ -231,17 +233,47 @@ def collect_best_m_models_static(cv_results, scoringfn, m_models_default=10):
     if m_models < m_models_default: 
         print(f'>> Warning: # of independent models could be generated = {m_models}. This is less than requested (= {m_models_default}).' ) 
         print('>> Not enough # of hyperparameters combinations available.')
-
+    # print(cv_results_.keys())
+    # print(scoringfn,cv_results_.loc["mean_test_"+scoringfn])
     best_m_model_indices = cv_results_.nlargest(m_models, "mean_test_"+scoringfn).index.tolist() 
     return best_m_model_indices
+
+def my_custom_rmse_fix(y_true, y_pred):
+    y_pred_update = np.where(y_pred<0,0,y_pred)
+    return np.sqrt(np.average((y_true - y_pred_update)**2, axis=0))*(-1)
+
+def my_custom_rmse_abs(y_true, y_pred):
+    return np.sqrt(np.average((y_true - np.abs(y_pred))**2, axis=0))*(-1)
+
+def UpdatePredictionValues(predictedvalues, which_refit_metric):
+    if which_refit_metric == 'my_rmse_fix':
+        print("\tShifting the negative predictions to 0.")
+        return np.where(predictedvalues<0,0,predictedvalues)
+    elif which_refit_metric == 'my_rmse_abs':
+        print("\tShifting the negative predictions to positive scale (taking absolute values).")
+        return  np.abs(predictedvalues)
 
 def m_bestmodel_parametersearch(X_train, X_test, y_train, y_test, X_predict,
                                 random_state=None,m_models=10,
                                 precision_threshold=0.98,Static_m_Models=False,
-                                scoringfn=['r2','neg_mean_absolute_error'], njobs=-1,
+                                scoringfn=['neg_root_mean_squared_error','r2'], njobs=-1,
                                 SVRModel=False,SVCmodel=False,PredictProb=False):
-    if SVCmodel: scoringfn= ['accuracy','balanced_accuracy'] #['precision','recall']
-    assert len(scoringfn) == 2, 'The scoring function should be list of 2 metric. The models based on 2 metrics in order.'
+    if not isinstance(scoringfn,list):
+        sys.exit('The scoring functions should be supplied as list.')
+    scoringfn = {nname:nname for nname in scoringfn}
+    if SVCmodel: 
+        pass
+        # scoringfn= ['accuracy','balanced_accuracy'] #['precision','recall']
+    else:
+        # scoringfn = {nname:nname for nname in scoringfn}
+        if 'my_rmse_abs' in scoringfn:
+            scoringfn['my_rmse_abs'] = make_scorer(my_custom_rmse_abs,greater_is_better=True)
+        if 'my_rmse_fix' in scoringfn:
+            scoringfn['my_rmse_fix'] = make_scorer(my_custom_rmse_fix,greater_is_better=True)
+    scoringfnn = list(scoringfn.keys())
+    if not Static_m_Models:
+        assert len(scoringfn) == 2, 'The scoring function should be list of 2 metric. The models based on 2 metrics in order.'
+        
     model_estimator = define_default_model(SVRModel=SVRModel,SVCmodel=SVCmodel)
     model_param_grid = ModelParameterGrid()
     svmgrid = GridSearchCV(estimator=model_estimator,
@@ -252,10 +284,11 @@ def m_bestmodel_parametersearch(X_train, X_test, y_train, y_test, X_predict,
                            refit=False) #refit_strategy)
     # print(svmgrid)
     svmgrid.fit(X_train, y_train)
+
     if Static_m_Models:
-        best_k_params = collect_best_m_models_static(svmgrid.cv_results_, scoringfn[0], m_models_default=m_models)
+        best_k_params = collect_best_m_models_static(svmgrid.cv_results_, scoringfnn[0], m_models_default=m_models)
     else:
-        best_k_params = collect_best_m_models_dynamic(svmgrid.cv_results_, scoringfn, precision_threshold_default=precision_threshold)
+        best_k_params = collect_best_m_models_dynamic(svmgrid.cv_results_, scoringfnn, precision_threshold_default=precision_threshold)
     y_prediction_models = pd.DataFrame()
     model_accuracy = {}
     best_model_parameters = {}
@@ -265,12 +298,17 @@ def m_bestmodel_parametersearch(X_train, X_test, y_train, y_test, X_predict,
         models_estimator.set_params(**tmp_params)
         models_estimator.fit(X_train, y_train)
         y_svm = models_estimator.predict(X_test) 
+        if Static_m_Models and scoringfnn[0] in ['my_rmse_fix','my_rmse_abs']:
+            y_svm = UpdatePredictionValues(y_svm, scoringfnn[0])
+        # y_svm = UpdatePredictionValues(y_svm, 'my_rmse_fix')
         
         ##### Collect model accuracies
         if SVRModel:
-            model_accuracy['model-'+str(I)] = mean_absolute_error(y_test, y_svm)
+            model_accuracy['model-'+str(I)] = {'MAE':mean_absolute_error(y_test, y_svm), 
+                                               'RMSE':mean_squared_error(y_test, y_svm, squared=False), 
+                                               'R2':r2_score(y_test, y_svm)}
         elif SVCmodel:
-            model_accuracy['model-'+str(I)] = accuracy_score(y_test, y_svm)
+            model_accuracy['model-'+str(I)] = {'Accuracy':accuracy_score(y_test, y_svm),'BalancedAccuracy':balanced_accuracy_score(y_test, y_svm)}
         best_model_parameters['model-'+str(I)] = tmp_params
         # print(f'model-{I}: ',"best parameter (CV score=%0.3f):" % svmgrid.best_score_, svmgrid.best_params_)
         ##### Predict data s
@@ -279,58 +317,63 @@ def m_bestmodel_parametersearch(X_train, X_test, y_train, y_test, X_predict,
             PP_dataframe = pd.DataFrame(models_estimator.predict_proba(X_predict),columns=pd.MultiIndex.from_tuples(TuplesList, names=['lv10','lv11']))
             y_prediction_models = pd.concat([y_prediction_models,PP_dataframe],axis=1)
         else:
-            y_prediction_models['model-'+str(I)] = models_estimator.predict(X_predict)
+            y_tmp_pred = models_estimator.predict(X_predict)
+            if Static_m_Models and scoringfnn[0] in ['my_rmse_fix','my_rmse_abs']:
+                y_tmp_pred = UpdatePredictionValues(y_tmp_pred, scoringfnn[0])
+            y_prediction_models['model-'+str(I)] = y_tmp_pred
         # y_prediction_models['model-'+str(I)] = models_estimator.predict_proba(X_predict) if PredictProb else models_estimator.predict(X_predict)
         # print(y_prediction_models)
         
     if len(best_k_params) < m_models:
         for I in range(len(best_k_params),m_models):
-            model_accuracy['model-'+str(I)] = np.nan 
+            if SVRModel:
+                model_accuracy['model-'+str(I)] = {'MAE':np.nan, 'RMSE':np.nan, 'R2':np.nan}
+            elif SVCmodel:
+                model_accuracy['model-'+str(I)] = {'Accuracy':np.nan,'BalancedAccuracy':np.nan}
         
     return model_accuracy, y_prediction_models, best_model_parameters
 
-def m_models_data_split(X, y, X_predict,
-                        refit = True, random_state=None,m_models=10,
-                        scoringfn='r2', njobs=-1):
+# def m_models_data_split(X, y, X_predict,
+#                         refit = True, random_state=None,m_models=10,
+#                         scoringfn='r2', njobs=-1):
     
-    y_prediction_models = pd.DataFrame()
-    model_accuracy = {}
-    best_model_parameters = {}
-    for I in range(m_models):
-        X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=random_state, test_size=0.2)
-        model_estimator, model_param_grid = define_default_model()
-        svrgrid = GridSearchCV(estimator=model_estimator,
-                               param_grid=model_param_grid,
-                               cv = 5,
-                               scoring = scoringfn,
-                               n_jobs=njobs,
-                               refit=refit)
+#     y_prediction_models = pd.DataFrame()
+#     model_accuracy = {}
+#     best_model_parameters = {}
+#     for I in range(m_models):
+#         X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=random_state, test_size=0.2)
+#         model_estimator, model_param_grid = define_default_model()
+#         svrgrid = GridSearchCV(estimator=model_estimator,
+#                                param_grid=model_param_grid,
+#                                cv = 5,
+#                                scoring = scoringfn,
+#                                n_jobs=njobs,
+#                                refit=refit)
 
-        svrgrid.fit(X_train, y_train)
-        y_svr = svrgrid.predict(X_test)
+#         svrgrid.fit(X_train, y_train)
+#         y_svr = svrgrid.predict(X_test)
         
-        ##### COllect model accuracies
-        model_accuracy['model-'+str(I)] = mean_absolute_error(y_test, y_svr)
-        best_model_parameters['model-'+str(I)] = svrgrid.best_params_
-        # print(f'model-{I}: ',"best parameter (CV score=%0.3f):" % svrgrid.best_score_, svrgrid.best_params_)
-        ##### Predict data 
-        y_prediction_models['model-'+str(I)] = svrgrid.predict(X_predict)
+#         ##### COllect model accuracies
+#         model_accuracy['model-'+str(I)] = mean_absolute_error(y_test, y_svr)
+#         best_model_parameters['model-'+str(I)] = svrgrid.best_params_
+#         # print(f'model-{I}: ',"best parameter (CV score=%0.3f):" % svrgrid.best_score_, svrgrid.best_params_)
+#         ##### Predict data 
+#         y_prediction_models['model-'+str(I)] = svrgrid.predict(X_predict)
     
-    return model_accuracy, y_prediction_models, best_model_parameters
+#     return model_accuracy, y_prediction_models, best_model_parameters
 
 def ALmodels(model_accuracy_last_k, model_err_last_k,
              conn, ML_df, PreservedTestSamples, PredictOvernSamples, X_predict,
              model_accuracy_cutoff, model_error_cutoff, 
              model_saturates_epsilon, nature_accuracy_cutoff, std_cutoff,
              Check_model_accuracy4last_k, ntry_max,
-             XFEATURES, xfeatures, yfeatures, LoopIndex,
+             XFEATURES, xfeatures, yfeatures, LoopIndex,TakeFracBadSamples=0.05,
              random_state=None, m_models=10, Static_m_Models=False, natoms=216,
              TrainingReachedAccuracy=False, TrainingReachedAccuracy_mag = False,
              SVRModel=True,SVCmodel=False,SVRSVCmodel=False,SVRdependentSVC=False,
-             PredictProb=False):
+             PredictProb=False,SVR_scoringfn=['neg_root_mean_squared_error','r2']):
     if SVRModel==False and SVCmodel==False and SVRSVCmodel==False and SVRdependentSVC==False:
-        print("No model training is mentioned. Are you sure?")
-        exit
+        sys.exit("No model training is mentioned. Are you sure?")
         
     if SVRModel or SVRSVCmodel:
         if SVRSVCmodel: yfeatures='BANDGAP'
@@ -339,14 +382,16 @@ def ALmodels(model_accuracy_last_k, model_err_last_k,
             m_bestmodel_parametersearch(ML_df[xfeatures], PreservedTestSamples[xfeatures],
                                         ML_df[yfeatures], PreservedTestSamples[yfeatures],
                                         X_predict, random_state=random_state,m_models=m_models,
-                                        SVRModel=True,SVCmodel=False,Static_m_Models=Static_m_Models)
+                                        SVRModel=True,SVCmodel=False,Static_m_Models=Static_m_Models,
+                                        scoringfn=SVR_scoringfn)
     
         ##### Check if models reached cut-off accuracy in bandgap magnitude
-        model_err_mean = np.nanmean(list(model_err.values())) # mean_model(mean_sample(AbsoluteError_per_model))
-        model_err_std = np.nanstd(list(model_err.values())) # std_model(mean_sample(AbsoluteError_per_model))
+        CheckModelAccuracyMetricValues = [Xt.get('RMSE') if isinstance(Xt,dict) else Xt for Xt in model_err.values()]
+        model_err_mean = np.nanmean(CheckModelAccuracyMetricValues) # mean_model(RMSE_sample)
+        model_err_std = np.nanstd(CheckModelAccuracyMetricValues) # std_model(RMSE_sample)
         model_accuracy_saturation_value = abs(model_err_mean - model_err_mean_last_k)
      
-        print(f'Mean absolute error in out-of-sample bandgap magnitude prediction (average over model) = {model_err_mean:.3f}±{model_err_std:.3f} eV')
+        print(f'RMSE in out-of-sample bandgap magnitude prediction (average over model) = {model_err_mean:.3f}±{model_err_std:.3f} eV')
         if model_err_mean < model_error_cutoff: # Loop convergence condition 3.2
             if SVRSVCmodel and not SVRdependentSVC:
                 TrainingReachedAccuracy_mag = True
@@ -365,7 +410,8 @@ def ALmodels(model_accuracy_last_k, model_err_last_k,
                 print(f' - AL SVR-model reached to saturation accuary (={model_accuracy_saturation_value:.4f} eV, cutoff={model_saturates_epsilon:.4f} eV)')
             else:
                 print(f'\n** AL model reached to saturation accuary (={model_accuracy_saturation_value:.4f} eV, cutoff={model_saturates_epsilon:.4f} eV)')
-                print(f'\tSaturation: ΔMAE = abs[MAE(current step)-MAE(average over last {Check_model_accuracy4last_k} steps)]')
+                # print(f'\tSaturation: ΔMAE = abs[MAE(current step)-MAE(average over last {Check_model_accuracy4last_k} steps)]')
+                print(f'\tSaturation: ΔRMSE = abs[RMSE(current step)-RMSE(average over last {Check_model_accuracy4last_k} steps)]')
                 print('** Terminating training. Model cannot perform better.')
                 return model_err, model_err_mean, best_model_parameters, True, None, None
         else: 
@@ -376,7 +422,8 @@ def ALmodels(model_accuracy_last_k, model_err_last_k,
             TrainingReachedAccuracy_mag, PickRandomConfigurationAtom, TestPickRandomConfiguration = \
                 GenerateBadSamples(PredictOvernSamples,y_prediction_models_STD > STD_mean,conn,XFEATURES,
                                    ntry_max,LoopIndex,std_cutoff,natoms=natoms, SVRdependentSVC=SVRdependentSVC,
-                                   LoopNonConvergenceCondition5 = STD_mean > std_cutoff, SVRSVCmodel=SVRSVCmodel,SVRModel=True)
+                                   LoopNonConvergenceCondition5 = STD_mean > std_cutoff, SVRSVCmodel=SVRSVCmodel,
+                                   SVRModel=True,TakeFracBadSamples=TakeFracBadSamples)
             if SVRModel:
                 return model_err, model_err_mean, best_model_parameters, TrainingReachedAccuracy_mag, PickRandomConfigurationAtom, TestPickRandomConfiguration
             elif SVRSVCmodel and SVRdependentSVC: 
@@ -397,7 +444,8 @@ def ALmodels(model_accuracy_last_k, model_err_last_k,
                 if Accuracy_mean < nature_accuracy_cutoff:
                     _, PickRandomConfigurationAtom, TestPickRandomConfiguration = \
                         GenerateBadSamples_SVRSVC(PredictOvernSamples,y_prediction_models_nature_accuracy < Accuracy_mean,conn,XFEATURES,
-                                                  PickRandomConfigurationAtom[0],TestPickRandomConfiguration,ntry_max,LoopIndex,natoms=natoms)
+                                                  PickRandomConfigurationAtom[0],TestPickRandomConfiguration,ntry_max,LoopIndex,natoms=natoms,
+                                                  TakeFracBadSamples=TakeFracBadSamples)
                 else:
                     print(f' - Mean accuracy (over samples) of bandgap nature prediction (mode over models) reached cutoff = {nature_accuracy_cutoff}.')
                     print(' - No bad bandgap nature samples. No additional samples from bad bandgap nature prediction is added to feed-back batch.')
@@ -413,8 +461,9 @@ def ALmodels(model_accuracy_last_k, model_err_last_k,
                                         SVRModel=False,SVCmodel=True,Static_m_Models=Static_m_Models)
         
         ##### Check if models reached cut-off accuracy in bandgap magnitude
-        model_accuracy_mean = np.nanmean(list(model_accuracy.values())) # mean_model(mean_sample(1(x_predict=x_true)_per_model))
-        model_accuracy_std = np.nanstd(list(model_accuracy.values())) # std_model(mean_sample(1(x_predict=x_true)_per_model))
+        CheckModelAccuracyMetricValues = [Xt.get('Accuracy') if isinstance(Xt,dict) else Xt for Xt in model_accuracy.values()]
+        model_accuracy_mean = np.nanmean(CheckModelAccuracyMetricValues) # mean_model(mean_sample(1(x_predict=x_true)_per_model))
+        model_accuracy_std = np.nanstd(CheckModelAccuracyMetricValues) # std_model(mean_sample(1(x_predict=x_true)_per_model))
         model_accuracy_saturation_value = abs(model_accuracy_mean - model_accuracy_mean_last_k)
         
         # print(model_accuracy_last_k, model_accuracy_mean_last_k, model_accuracy_mean, model_accuracy_saturation_value)
@@ -460,7 +509,8 @@ def ALmodels(model_accuracy_last_k, model_err_last_k,
                 if Accuracy_mean < nature_accuracy_cutoff:
                     TrainingReachedAccuracy, PickRandomConfigurationAtom, TestPickRandomConfiguration = \
                         GenerateBadSamples_SVRSVC(PredictOvernSamples,y_prediction_models_n_accuracy < Accuracy_mean,conn,XFEATURES,
-                                                  PickRandomConfigurationAtom[0],TestPickRandomConfiguration,ntry_max,LoopIndex,natoms=natoms)   
+                                                  PickRandomConfigurationAtom[0],TestPickRandomConfiguration,ntry_max,LoopIndex,natoms=natoms,
+                                                  TakeFracBadSamples=TakeFracBadSamples)   
                 else:
                     print(f' - Mean accuracy (over samples) of bandgap nature prediction (mode over models) reached cutoff = {nature_accuracy_cutoff}.')
                     # print(' - No bad bandgap nature samples. No additional samples from bad bandgap nature prediction is added to feed-back batch.')
@@ -476,7 +526,8 @@ def ALmodels(model_accuracy_last_k, model_err_last_k,
                 TrainingReachedAccuracy, PickRandomConfigurationAtom, TestPickRandomConfiguration = \
                     GenerateBadSamples(PredictOvernSamples,y_prediction_models_n_accuracy < Accuracy_mean,conn,XFEATURES,
                                        ntry_max,LoopIndex,nature_accuracy_cutoff,natoms=natoms,
-                                       LoopNonConvergenceCondition5 = Accuracy_mean < nature_accuracy_cutoff,SVRSVCmodel=SVRSVCmodel)
+                                       LoopNonConvergenceCondition5 = Accuracy_mean < nature_accuracy_cutoff,SVRSVCmodel=SVRSVCmodel,
+                                       TakeFracBadSamples=TakeFracBadSamples)
             
                 return model_accuracy, model_accuracy_mean, best_model_parameters_n, TrainingReachedAccuracy, PickRandomConfigurationAtom, TestPickRandomConfiguration
 
@@ -494,35 +545,64 @@ def PredictFinal(C,gamma,SVRModel=False,SVCModel=False):
     svmpipe = Pipeline(steps=[("scaler", scaler), ("svmm", svm)])
     return svmpipe
 
+def UpdateConfuxionMatrixDisplay(disp):
+    disp.plot(colorbar=False)
+    # disp.ax_.set_title('Bandgap nature prediction\n1=direct, 0=indirect')
+    disp.plot(colorbar=False)
+    plt.setp(disp.ax_.get_yticklabels(), rotation='vertical',va='center')
+    # disp.text_[0,0].set_text(disp.text_[0,0].get_text()+'\nhi')
+    return disp
+
+def LabelConversionFn(lbs,rdict={0:'direct',1:'indirect'}):
+    print('\tMapping ==> ',rdict)
+    return [rdict.get(int(i)) for i in lbs]
+
 def PrintConfusionMatrix(X_predict,labels,save=False, savepath='.',figname='/ConfusionMatrix.png'):
-    cm = confusion_matrix(X_predict['TrueBandgapNature'], X_predict['PredictBandgapNature'], labels=labels)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)   
-    disp.plot()
-    disp.ax_.set_title('AL bandgap nature prediction\n0=direct, 1=indirect')
+    confucion_display_labels = LabelConversionFn(labels)
+    cm = confusion_matrix(X_predict['TrueBandgapNature'], X_predict['PredictBandgapNature'])
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm.T,display_labels=confucion_display_labels)
+    disp = UpdateConfuxionMatrixDisplay(disp)
+    disp.ax_.tick_params(axis='both',which='major',length=10,width=2)
+    disp.ax_.tick_params(axis='both',which='minor',length=6,width=2)
+    disp.ax_.set_xlabel("True label")
+    disp.ax_.set_ylabel("Predicted label")
     if save:
         disp.figure_.savefig(savepath+figname,bbox_inches = 'tight',dpi=300)
-        plt.close()
+        plt.close()   
     else:
-        plt.show()   
-    # print('Classification report:\n',classification_report(X_predict['TrueBandgapNature'], X_predict['PredictBandgapNature']))
-    return
+        plt.show()
+    return 
+
+# def PrintConfusionMatrix(X_predict,labels,save=False, savepath='.',figname='/ConfusionMatrix.png'):
+#     cm = confusion_matrix(X_predict['TrueBandgapNature'], X_predict['PredictBandgapNature'], labels=labels)
+#     disp = ConfusionMatrixDisplay(confusion_matrix=cm.T, display_labels=labels)   
+#     disp.ax_.set_xlabel("True label")
+#     disp.ax_.set_ylabel("Predicted label")
+#     disp.plot()
+#     disp.ax_.set_title('AL bandgap nature prediction\n0=direct, 1=indirect')
+#     if save:
+#         disp.figure_.savefig(savepath+figname,bbox_inches = 'tight',dpi=300)
+#         plt.close()
+#     else:
+#         plt.show()   
+#     # print('Classification report:\n',classification_report(X_predict['TrueBandgapNature'], X_predict['PredictBandgapNature']))
+#     return
 
 def GenerateBandgapMagFigsData(X_predict,df,y_prediction_whole_space,yfeatures):
     '''
     # PredictMeanBandgap = mean_model(bandgap_predict) # for each sample
     # PredictSTDBandgap = std_model(bandgap_predict) # for each sample
-    # BandgapError = PredictMeanBandgap - DFTbandgap # for each sample
+    # BandgapError = DFTbandgap  - PredictMeanBandgap # for each sample
     '''
     X_predict['TrueBandgap'] = df[yfeatures].copy()
     X_predict['PredictMeanBandgap'] = y_prediction_whole_space.mean(axis=1)
-    X_predict['BandgapError'] = X_predict['PredictMeanBandgap'] - X_predict['TrueBandgap']
     X_predict['PredictSTDBandgap'] = y_prediction_whole_space.std(axis=1)
-    #### MAE = mean_sample(abs(mean_model(y_predict) - y_true))
-    print('\tBandgap magnitude prediction: (for each sample prediction is average over models)')
-    print(f'\t\tMAE = {X_predict["BandgapError"].abs().mean():.3f}±{X_predict["BandgapError"].abs().std():.3f} eV, Max error = {X_predict["BandgapError"].abs().max():.3f} eV')
-    print('\t\t[mae_per_sample:=abs(mean_model(y_predict)-y_true)')
-    print('\t\t MAE:=mean_sample(mae_per_sample)±std_sample(mae_per_sample)')
-    print('\t\t Max error:=max_sample(mae_per_sample)]')
+    X_predict['BandgapError'] = X_predict['TrueBandgap'] - X_predict['PredictMeanBandgap'] 
+    # print('\tBandgap magnitude prediction: (for each sample prediction is average over models)')
+    # print(f"\t\tMAE = {mean_absolute_error(X_predict['TrueBandgap'], X_predict['PredictMeanBandgap']):.3f} eV")
+    # print(f"\t\tRMSE = {mean_squared_error(X_predict['TrueBandgap'], X_predict['PredictMeanBandgap'],squared=False):.3f} eV")
+    # print('\t\t[tMAE:=mean_absolute_error(y_true,mode_models(y_predict)); y_true=DFT_values]')
+    # print('\t\t[tRMSE:=root_mean_squared_error(y_true,mode_models(y_predict)); y_true=DFT_values]')
     return X_predict
 
 def CalculateAccuracyFromPredictionLabels(y_prediction_whole_space,TrueValues):
@@ -538,12 +618,12 @@ def GenerateBandgapNatureFigsData(X_predict,df,y_prediction_whole_space,yfeature
     X_predict['PredictBandgapNature'] = y_prediction_whole_space.mode(axis=1).iloc[:, 0].astype(int) # Note: if mode is 50:50 the tag is 0 (==direct).
     X_predict['NatureAccuracyTag'] = CalculateAccuracyFromPredictionLabels(y_prediction_whole_space,X_predict['PredictBandgapNature'])
     X_predict['NatureAccuracyWRTtrue'] = CalculateAccuracyFromPredictionLabels(y_prediction_whole_space,X_predict['TrueBandgapNature'])    
-    print("\tBandgap nature prediction: (for each sample prediction is mode over models)")
-    print(f"\t\tAccuracy = {accuracy_score(X_predict['TrueBandgapNature'], X_predict['PredictBandgapNature']):.3f}")
-    print('\t\t[Accuracy:=accuracy_score(y_true,mode_models(y_predict)); y_true=DFT_nature]')
+    # print("\tBandgap nature prediction: (for each sample prediction is mode over models)")
+    # print(f"\t\tAccuracy = {accuracy_score(X_predict['TrueBandgapNature'], X_predict['PredictBandgapNature']):.3f}")
+    # print('\t\t[Accuracy:=accuracy_score(y_true,mode_models(y_predict)); y_true=DFT_nature]')
     return X_predict
 
-def GenerateBandgapFigsData(AL_dbname,df,xfeatures,yfeatures):   
+def GenerateBandgapFigsData(AL_dbname,df,xfeatures,yfeatures,FixPredictionValues=None):   
     conn = sq.connect(AL_dbname)
     Models_ = pd.read_sql_query("SELECT * FROM BestModelsParameters", conn, index_col='HyperParameters')
     ML_df = pd.read_sql_query('SELECT * FROM ALLDATA', conn)
@@ -560,7 +640,10 @@ def GenerateBandgapFigsData(AL_dbname,df,xfeatures,yfeatures):
     for I in range(len(C_values)):
         svm_model = PredictFinal(C_values[I],gamma_values[I],SVRModel=SVRModel,SVCModel=SVCModel)
         svm_model.fit(ML_df[xfeatures], ML_df[yfeatures])
-        y_prediction_whole_space['model-'+str(I)] = svm_model.predict(X_predict)
+        tmp_pred_c = svm_model.predict(X_predict)
+        if SVRModel and (FixPredictionValues in ['my_rmse_fix','my_rmse_abs']):
+            tmp_pred_c = UpdatePredictionValues(tmp_pred_c, FixPredictionValues)
+        y_prediction_whole_space['model-'+str(I)] = tmp_pred_c
 
     if yfeatures=='BANDGAP':
         X_predict = GenerateBandgapMagFigsData(X_predict,df,y_prediction_whole_space,yfeatures)
@@ -570,7 +653,7 @@ def GenerateBandgapFigsData(AL_dbname,df,xfeatures,yfeatures):
         labels=svm_model.classes_
     return X_predict, labels
 
-def GenerateBandgapBothFigsData(AL_dbname,df,xfeatures):
+def GenerateBandgapBothFigsData(AL_dbname,df,xfeatures,FixPredictionValues=None):
     conn = sq.connect(AL_dbname)
     Models_svr = pd.read_sql_query("SELECT * FROM BestModelsParameters", conn, index_col='HyperParameters')
     Models_svc = pd.read_sql_query("SELECT * FROM NatureBestModelsParameters", conn, index_col='HyperParameters')
@@ -584,7 +667,11 @@ def GenerateBandgapBothFigsData(AL_dbname,df,xfeatures):
     for I in range(len(C_values[0])):
         svm_model = PredictFinal(C_values[0][I],gamma_values[0][I],SVRModel=True,SVCModel=False)
         svm_model.fit(ML_df[xfeatures], ML_df['BANDGAP'])
-        y_prediction_whole_space['model-'+str(I)] = svm_model.predict(X_predict)
+        tmp_pred_cc = svm_model.predict(X_predict)
+        if FixPredictionValues in ['my_rmse_fix','my_rmse_abs']:
+            tmp_pred_cc = UpdatePredictionValues(tmp_pred_cc, FixPredictionValues)
+        y_prediction_whole_space['model-'+str(I)]  = tmp_pred_cc
+        
     for I in range(len(C_values[1])):     
         svm_model = PredictFinal(C_values[1][I],gamma_values[1][I],SVRModel=False,SVCModel=True)
         svm_model.fit(ML_df[xfeatures], ML_df['NATURE'])
