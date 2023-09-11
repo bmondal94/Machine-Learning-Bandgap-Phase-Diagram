@@ -155,6 +155,7 @@ def PlotCV_results(svrgrid, paramss, scoringfn_tmp, SVRgridparameters_c, SVRgrid
         elif '_C' in III:
             colname = 'param_' + III
         elif '_epsilon' in III:
+        	#markersize = 10*np.log(results['param_' + III].astype(np.float64)*1e3) #1.e-3 is the lowest epsilon value
             markersize = 100*np.log1p(results['param_' + III].astype(np.float64))
             
     if isinstance(scoringfn_tmp,str): scoringfn_tmp=('score',)
@@ -552,6 +553,7 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
     # Parameters of pipelines can be set using ‘__’ separated parameter names:
     
     if SVM_Use_GridSearCV:
+        HyperparameterSearchMethod = 'GridSearchCV'
         # C_range = [1e0, 1e1, 1e2, 1e3]
         # gamma_range = np.logspace(-2, 2, 5)
         C_range = [1e0, 1e1, 50, 1e2, 500, 1e3]
@@ -560,6 +562,7 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
         # C_range = stats.loguniform.rvs(1.0e-02, 1.0e+03, size=20)
         # gamma_range = stats.loguniform.rvs(1.e-02, 1.e+01, size=20)
     else:
+        HyperparameterSearchMethod = 'RandomizedSearchCV'
         # C_range = stats.uniform(1.e-04, 1000)
         # gamma_range = stats.uniform(1.e-06, 1.e-03)
         C_range = stats.loguniform(1.0e-02, 1.0e+03)
@@ -584,7 +587,7 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
         pass
 
     if SVM_Use_GridSearCV:
-        print(f"\t Hyperparameter optimization with GridSearchCV ({CrossValidationFold}-fold CV).")
+        print(f"\t Hyperparameter optimization with {HyperparameterSearchMethod} ({CrossValidationFold}-fold CV).")
         svmgrid = GridSearchCV(estimator=pipe,
                                param_grid=param_grid,
                                cv = CrossValidationFold,
@@ -592,7 +595,7 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
                                n_jobs=njobs,
                                refit=False,verbose=2)
     else:
-        print(f"\t Hyperparameter optimization with RandomizedSearchCV ({CrossValidationFold}-fold CV).")
+        print(f"\t Hyperparameter optimization with {HyperparameterSearchMethod} ({CrossValidationFold}-fold CV).")
         svmgrid = RandomizedSearchCV(estimator=pipe,
                                      param_distributions=param_grid,
                                      cv = CrossValidationFold,
@@ -607,7 +610,7 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
     print(f"\t Hyperparameter optimization time = {svm_fit:.3f} s")       
 
     if PlotResults:
-        CVfigname = 'BandgapNatureGridSearchTestScore.png' if SVCclassification else 'BandgapValueGridSearchTestScore.png'
+        CVfigname = f'BandgapNature{HyperparameterSearchMethod}TestScore.png' if SVCclassification else f'BandgapValue{HyperparameterSearchMethod}TestScore.png'
         fname_tmp = dirpathSystem_+'/Figs/'
         os.makedirs(fname_tmp,exist_ok=True)
         _ = PlotCV_results(svmgrid, list(param_grid.keys()),scoringfn,C_range, gamma_range, 
@@ -621,7 +624,7 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
                         else SVR(kernel="rbf",tol=tol,cache_size=cache_size) 
 
         with redirect_stdout(open(OutPutTxtFile, 'a')):
-            print(f"Training date: {datetime.now()}")
+            print(f"Refitting start: {datetime.now()}")
             print("="*100)
             print(f"Refit metrics: {refit_metric}")
             print("*"*75)
@@ -639,7 +642,7 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
             best_score_ = svmgrid.cv_results_[f"mean_test_{refit_metric}"][best_index_]
             best_params_ = svmgrid.cv_results_['params'][best_index_]
             print("Best parameter (CV score=%0.6f ):" % best_score_, best_params_)
-            print("The grid_search cross-validation: %d fold" % svmgrid.n_splits_)
+            print("The hyperparameter tuning cross-validation: %d fold" % svmgrid.n_splits_)
             refit_model.set_params(**best_params_)
             refit_model.fit(X_train, y_train)
             y_svm = refit_model.predict(X_test)
@@ -679,9 +682,8 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
                     y_svrsvc = svr_pipe.predict(X_test)
                     y_svrsvc_all = svr_pipe.predict(x_all_SVRSVC)
                     
-                    if refit_metric in ['my_rmse_fix','my_rmse_abs']:
-                        y_svrsvc = UpdatePredictionValues(y_svrsvc, refit_metric)
-                        y_svrsvc_all = UpdatePredictionValues(y_svrsvc_all, refit_metric)
+                    y_svrsvc = UpdatePredictionValues(y_svrsvc, 'my_rmse_fix')
+                    y_svrsvc_all = UpdatePredictionValues(y_svrsvc_all, 'my_rmse_fix')
                         
                     PrintSVR_output(y_test_SVRSVC, y_svrsvc, y_all_SVRSVC, y_svrsvc_all,add_extra='svrsvc_')
                     print(" ")
@@ -725,6 +727,7 @@ def mysvrmodel_parametersearch(X, y, refit_metic_list, DoNotReset, multiregressi
                 print("*"*75)
                 print(f"* Model saved: \n\t{filename}")
                 print("*"*75) 
+            print(f"Refitting finished: {datetime.now()}")
                 
         if DumpData:
             DumpDf = [X_test,y_test]
